@@ -87,7 +87,7 @@ class ErrorCatchingThread(threading.Thread):
         except KeyboardInterrupt:
             os.kill(os.getpid(), signal.SIGTERM)
 
-    def getThreadId(self):
+    def get_thread_id(self):
         if hasattr(self, "_thread_id"):
             return self._thread_id
         for id, thread in threading._active.items():
@@ -104,71 +104,73 @@ Parser classes
 class RssAddressParser(HTMLParser):
     def __init__(self):
         super(RssAddressParser, self).__init__(convert_charrefs=True)
-        self.rssAddress = None
+        self.rss_address = None
 
     def handle_starttag(self, tag, attrs):
-        attrDict = dict(attrs)
-        if "type" in attrDict and attrDict["type"] == "application/rss+xml":
-            self.rssAddress = attrDict["href"]
+        attr_dict = dict(attrs)
+        if "type" in attr_dict and attr_dict["type"] == "application/rss+xml":
+            self.rss_address = attr_dict["href"]
 
 
 # Parser used for extracting information about channels from YouTube channel query HTML
 class ChannelQueryParser(HTMLParser):
     def __init__(self):
         super(ChannelQueryParser, self).__init__(convert_charrefs=True)
-        self.isScriptTag = False
-        self.resultList = None
+        self.is_script_tag = False
+        self.result_list = None
 
     def handle_starttag(self, tag, attrs):
         if tag == "script":
-            self.isScriptTag = True
+            self.is_script_tag = True
 
     def handle_data(self, data):
-        if self.isScriptTag:
-            self.isScriptTag = False
+        if self.is_script_tag:
+            self.is_script_tag = False
             if "var ytInitialData" in data:
                 pattern = re.compile(
-                    '"channelRenderer":{"channelId":"([^"]+)",'
+                    '"channelRenderer":{"channel_id":"([^"]+)",'
                     + '"title":{"simpleText":"([^"]+)"'
                 )
-                tupleList = pattern.findall(data)
-                resultList = []
-                for tup in tupleList:
-                    resultList.append(
-                        ChannelQueryObject(channelId=tup[0], title=tup[1])
+                tuple_list = pattern.findall(data)
+                result_list = []
+                for tup in tuple_list:
+                    result_list.append(
+                        ChannelQueryObject(channel_id=tup[0], title=tup[1])
                     )
-                self.resultList = resultList
+                self.result_list = result_list
 
 
 # Parser used for extracting information about channels from YouTube channel query HTML
 class VideoQueryParser(HTMLParser):
     def __init__(self):
         super(VideoQueryParser, self).__init__(convert_charrefs=True)
-        self.isScriptTag = False
-        self.resultList = None
+        self.is_script_tag = False
+        self.result_list = None
 
     def handle_starttag(self, tag, attrs):
         if tag == "script":
-            self.isScriptTag = True
+            self.is_script_tag = True
 
     def handle_data(self, data):
-        if self.isScriptTag:
-            self.isScriptTag = False
+        if self.is_script_tag:
+            self.is_script_tag = False
             if "var ytInitialData" in data:
                 pattern = re.compile(
-                    'videoId":"([^"]+)","thumbnail":{"thumbnails":'
+                    'video_id":"([^"]+)","thumbnail":{"thumbnails":'
                     + '[{"url":"([^"]+)","width":[0-9]+,"height":[0-9]+},{"url"'
                     + ':"[^"]+","width":[0-9]+,"height":[0-9]+}]},"title":{'
                     + '"runs":[{"text":"[^"]+"}],"accessibility":{'
                     + '"accessibilityData":{"label":"([^"]+)"}'
                 )
-                tupleList = pattern.findall(data)
-                resultList = []
-                for tup in tupleList:
-                    resultList.append(
-                        VideoQueryObject(videoId=tup[0], thumbnail=tup[1], title=tup[2])
+                tuple_list = pattern.findall(data)
+                result_list = []
+                for tup in tuple_list:
+                    result_list.append(
+                        VideoQueryObject(
+                            video_id=tup[0], thumbnail=tup[1], title=tup[2]
+                        )
                     )
-                self.resultList = resultList
+                self.result_list = result_list
 
 
 """
@@ -242,12 +244,12 @@ Other classes
 
 # contains information from one result item from video query
 class VideoQueryObject:
-    def __init__(self, videoId=None, thumbnail=None, title=None):
-        self.videoId = videoId
+    def __init__(self, video_id=None, thumbnail=None, title=None):
+        self.video_id = video_id
         self.thumbnail = thumbnail
         self.title = title
-        if videoId is not None:
-            self.url = f"http://youtube.com/watch?v={videoId}"
+        if video_id is not None:
+            self.url = f"http://youtube.com/watch?v={video_id}"
         else:
             self.url = None
 
@@ -257,12 +259,12 @@ class VideoQueryObject:
 
 # contains information from one result item from channel query
 class ChannelQueryObject:
-    def __init__(self, channelId=None, title=None):
-        self.channelId = channelId
+    def __init__(self, channel_id=None, title=None):
+        self.channel_id = channel_id
         self.title = title
 
     def __str__(self):
-        return f"{self.title}  --  (channel ID {self.channelId})"
+        return f"{self.title}  --  (channel ID {self.channel_id})"
 
 
 class DatabaseEncoder(JSONEncoder):
@@ -306,9 +308,9 @@ class Database:
         return self.db.pop(*args, **kwargs)
 
 
-# item of the sort provided in list to doMethodMenu; it is provided a description of an
-# option presented to the user, a function that will be executed if chosen by the user,
-# and all arguments that the function needs
+# item of the sort provided in list to do_method_menu; it is provided a
+# description of an option presented to the user, a function that will be
+# executed if chosen by the user, and all arguments that the function needs
 class MethodMenuDecision:
     def __init__(self, description, function, *args, **kwargs):
         self.function = function
@@ -319,7 +321,7 @@ class MethodMenuDecision:
     def __str__(self):
         return str(self.description)
 
-    def executeDecision(self):
+    def execute_decision(self):
         return self.function(*self.args, **self.kwargs)
 
 
@@ -330,30 +332,32 @@ class FeedVideoDescriber:
     def __str__(self):
         return self.video["title"] + (" (unseen!)" if not self.video["seen"] else "")
 
-    def getThumbnail(self):
+    def get_thumbnail(self):
         return self.video["thumbnail file"]
 
 
 class VideoQueryObjectDescriber:
-    def __init__(self, videoQueryObject):
-        self.videoQueryObject = videoQueryObject
+    def __init__(self, video_query_object):
+        self.video_query_object = video_query_object
 
     def __str__(self):
-        return self.videoQueryObject.title
+        return self.video_query_object.title
 
-    def getThumbnail(self):
-        return "/".join([THUMBNAIL_SEARCH_DIR, self.videoQueryObject.videoId + ".jpg"])
+    def get_thumbnail(self):
+        return "/".join(
+            [THUMBNAIL_SEARCH_DIR, self.video_query_object.video_id + ".jpg"]
+        )
 
 
 class FeedDescriber:
-    def __init__(self, feed, channelTitle):
+    def __init__(self, feed, channel_title):
         self.feed = feed
-        self.channelTitle = channelTitle
+        self.channel_title = channel_title
 
     def __str__(self):
         return "".join(
             [
-                self.channelTitle,
+                self.channel_title,
                 ": (",
                 str(sum([1 for video in self.feed if not video["seen"]])),
                 "/",
@@ -364,16 +368,16 @@ class FeedDescriber:
 
 
 class AdHocKey:
-    def __init__(self, key, item, activationIndex=ANY_INDEX):
+    def __init__(self, key, item, activation_index=ANY_INDEX):
         self.key = key
         self.item = item
-        self.activationIndex = activationIndex
+        self.activation_index = activation_index
 
-    def isValidIndex(self, index):
-        if self.activationIndex == ANY_INDEX:
+    def is_valid_index(self, index):
+        if self.activation_index == ANY_INDEX:
             return True
         else:
-            return index == self.activationIndex
+            return index == self.activation_index
 
     def __eq__(self, other):
         if isinstance(other, int):
@@ -384,28 +388,31 @@ class AdHocKey:
             return (
                 other.key == self.key
                 and other.item == self.item
-                and other.activationIndex == self.activationIndex
+                and other.activation_index == self.activation_index
             )
         else:
             raise TypeError
 
 
 class MarkAllAsReadKey(AdHocKey):
-    def __init__(self, channelId, activationIndex, database, key=ord("a")):
+    def __init__(self, channel_id, activation_index, database, key=ord("a")):
         item = MethodMenuDecision(
-            f"mark all by {channelId} as read", doMarkChannelAsRead, database, channelId
+            f"mark all by {channel_id} as read",
+            do_mark_channel_as_read,
+            database,
+            channel_id,
         )
-        AdHocKey.__init__(self, key=key, item=item, activationIndex=activationIndex)
+        AdHocKey.__init__(self, key=key, item=item, activation_index=activation_index)
 
 
 class MarkEntryAsReadKey(AdHocKey):
-    def __init__(self, video, activationIndex, key=ord("a")):
+    def __init__(self, video, activation_index, key=ord("a")):
         item = MethodMenuDecision(
             "mark video as read",
             lambda video: video.update({"seen": (not video["seen"])}),
             video,
         )
-        AdHocKey.__init__(self, key=key, item=item, activationIndex=activationIndex)
+        AdHocKey.__init__(self, key=key, item=item, activation_index=activation_index)
 
 
 #############
@@ -418,278 +425,285 @@ Presentation functions
 
 
 # This function displays a message while the user waits for a function to execute
-def doWaitScreen(message, waitFunction, *args, **kwargs):
-    return curses.wrapper(doWaitScreenNcurses, message, waitFunction, *args, **kwargs)
+def do_wait_screen(message, wait_function, *args, **kwargs):
+    return curses.wrapper(
+        do_wait_screen_ncurses, message, wait_function, *args, **kwargs
+    )
 
 
-# This function is where the Ncurses level of doWaitScreen starts.
-# It should never be called directly, but always through doWaitScreen!
-def doWaitScreenNcurses(stdscr, message, waitFunction, *args, **kwargs):
+# This function is where the Ncurses level of do_wait_screen starts.
+# It should never be called directly, but always through do_wait_screen!
+def do_wait_screen_ncurses(stdscr, message, wait_function, *args, **kwargs):
     curses.curs_set(0)
     curses.init_pair(HIGHLIGHTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
     curses.init_pair(NOT_HIGHLIGHTED, curses.COLOR_WHITE, curses.COLOR_BLACK)
-    printMenu(message, [], stdscr, 0, showItemNumber=False)
-    return waitFunction(*args, **kwargs)
+    print_menu(message, [], stdscr, 0, show_item_number=False)
+    return wait_function(*args, **kwargs)
 
 
 # This Function gets a yes/no response to some query from the user
-def doYesNoQuery(query):
-    return curses.wrapper(doYnQueryNcurses, query)
+def do_yes_no_query(query):
+    return curses.wrapper(do_yes_no_query_ncurses, query)
 
 
-# This function is where the Ncurses level of doYesNoQuery starts.
-# It should never be called directly, but always through doYesNoQuery!
-def doYnQueryNcurses(stdscr, query):
+# This function is where the Ncurses level of do_yes_no_query starts.
+# It should never be called directly, but always through do_yes_no_query!
+def do_yes_no_query_ncurses(stdscr, query):
     return (
-        doSelectionQueryNcurses(stdscr, query, ["yes", "no"], showItemNumber=False)
+        do_selection_query_ncurses(stdscr, query, ["yes", "no"], show_item_number=False)
         == "yes"
     )
 
 
 # This function lets the user choose an object from a list
-def doSelectionQuery(
+def do_selection_query(
     query,
     options,
-    queryStyle=ItemQuery,
-    initialIndex=None,
-    showItemNumber=True,
-    adHocKeys=[],
+    query_style=ItemQuery,
+    initial_index=None,
+    show_item_number=True,
+    adhoc_keys=[],
 ):
     return curses.wrapper(
-        doSelectionQueryNcurses,
+        do_selection_query_ncurses,
         query,
         options,
-        queryStyle=queryStyle,
-        initialIndex=initialIndex,
-        showItemNumber=showItemNumber,
-        adHocKeys=adHocKeys,
+        query_style=query_style,
+        initial_index=initial_index,
+        show_item_number=show_item_number,
+        adhoc_keys=adhoc_keys,
     )
 
 
-# This function is where the Ncurses level of doSelectionQuery starts.
-# It should never be called directly, but always through doSelectionQuery!
-def doSelectionQueryNcurses(
+# This function is where the Ncurses level of do_selection_query starts.
+# It should never be called directly, but always through do_selection_query!
+def do_selection_query_ncurses(
     stdscr,
     query,
     options,
-    queryStyle=ItemQuery,
-    initialIndex=None,
-    showItemNumber=True,
-    adHocKeys=[],
+    query_style=ItemQuery,
+    initial_index=None,
+    show_item_number=True,
+    adhoc_keys=[],
 ):
     curses.curs_set(0)
     curses.init_pair(HIGHLIGHTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
     curses.init_pair(NOT_HIGHLIGHTED, curses.COLOR_WHITE, curses.COLOR_BLACK)
-    jumpNumList = []
-    if initialIndex is not None:
-        choiceIndex = initialIndex
+    jump_num_list = []
+    if initial_index is not None:
+        choice_index = initial_index
     else:
-        choiceIndex = 0
+        choice_index = 0
     while True:
         with (ueberzug.Canvas() if USE_THUMBNAILS else NoCanvas()) as canvas:
-            printMenu(
+            print_menu(
                 query,
                 options,
                 stdscr,
-                choiceIndex,
-                showItemNumber=showItemNumber,
-                jumpNumStr="".join(jumpNumList),
+                choice_index,
+                show_item_number=show_item_number,
+                jump_num_str="".join(jump_num_list),
                 canvas=canvas,
             )
             key = stdscr.getch()
             # Ad hoc keys should always take first precedence
 
-            if key in adHocKeys:
-                for adHocKey in adHocKeys:
-                    if adHocKey.isValidIndex(choiceIndex):
-                        if queryStyle is ItemQuery:
-                            return adHocKey.item
-                        elif queryStyle is IndexQuery:
-                            return choiceIndex
-                        elif queryStyle is CombinedQuery:
-                            return adHocKey.item, choiceIndex
+            if key in adhoc_keys:
+                for adhoc_key in adhoc_keys:
+                    if adhoc_key.is_valid_index(choice_index):
+                        if query_style is ItemQuery:
+                            return adhoc_key.item
+                        elif query_style is IndexQuery:
+                            return choice_index
+                        elif query_style is CombinedQuery:
+                            return adhoc_key.item, choice_index
 
             elif key in [curses.KEY_UP, ord("k")]:
-                jumpNumList = []
-                choiceIndex = (choiceIndex - 1) % len(options)
+                jump_num_list = []
+                choice_index = (choice_index - 1) % len(options)
             elif key in [curses.KEY_DOWN, ord("j")]:
-                jumpNumList = []
-                choiceIndex = (choiceIndex + 1) % len(options)
+                jump_num_list = []
+                choice_index = (choice_index + 1) % len(options)
             elif key in [ord(digit) for digit in "1234567890"]:
-                if len(jumpNumList) < 6:
-                    jumpNumList.append(chr(key))
+                if len(jump_num_list) < 6:
+                    jump_num_list.append(chr(key))
             elif key in [curses.KEY_BACKSPACE, ord("\b"), ord("\x7f")]:
-                if jumpNumList:
-                    jumpNumList.pop()
+                if jump_num_list:
+                    jump_num_list.pop()
             elif key == ord("g"):
-                jumpNumList = []
-                choiceIndex = 0
+                jump_num_list = []
+                choice_index = 0
             elif key == ord("G"):
-                jumpNumList = []
-                choiceIndex = len(options) - 1
+                jump_num_list = []
+                choice_index = len(options) - 1
             elif key in [ord("q"), ord("h"), curses.KEY_LEFT]:
                 raise KeyboardInterrupt
             elif key in [curses.KEY_ENTER, 10, 13, ord("l"), curses.KEY_RIGHT]:
-                if jumpNumList:
-                    jumpNum = int("".join(jumpNumList))
-                    choiceIndex = min(jumpNum - 1, len(options) - 1)
-                    jumpNumList = []
-                elif queryStyle is ItemQuery:
-                    return options[choiceIndex]
-                elif queryStyle is IndexQuery:
-                    return choiceIndex
-                elif queryStyle is CombinedQuery:
-                    return options[choiceIndex], choiceIndex
+                if jump_num_list:
+                    jump_num = int("".join(jump_num_list))
+                    choice_index = min(jump_num - 1, len(options) - 1)
+                    jump_num_list = []
+                elif query_style is ItemQuery:
+                    return options[choice_index]
+                elif query_style is IndexQuery:
+                    return choice_index
+                elif query_style is CombinedQuery:
+                    return options[choice_index], choice_index
                 else:
                     raise UnknownQueryStyle
 
 
 # This function displays a piece of information to the user until they confirm having
 # seen it
-def doNotify(message):
-    doSelectionQuery(message, ["ok"], showItemNumber=False)
+def do_notify(message):
+    do_selection_query(message, ["ok"], show_item_number=False)
 
 
 # This function gets a string of written input from the user
-def doGetUserInput(query, maxInputLength=40):
-    return curses.wrapper(doGetUserInputNcurses, query, maxInputLength=maxInputLength)
+def do_get_user_input(query, max_input_length=40):
+    return curses.wrapper(
+        do_get_user_input_ncurses, query, max_input_length=max_input_length
+    )
 
 
-# This function is where the Ncurses level of doGetUserInput starts.
-# It should never be called directly, but always through doGetUserInput!
-def doGetUserInputNcurses(stdscr, query, maxInputLength=40):
+# This function is where the Ncurses level of do_get_user_input starts.
+# It should never be called directly, but always through do_get_user_input!
+def do_get_user_input_ncurses(stdscr, query, max_input_length=40):
     curses.curs_set(0)
     curses.init_pair(HIGHLIGHTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
     curses.init_pair(NOT_HIGHLIGHTED, curses.COLOR_WHITE, curses.COLOR_BLACK)
     curses.curs_set(0)
-    curserPosition = 0
-    userInputChars = []
+    cursor_position = 0
+    user_input_chars = []
     while True:
-        printMenu(
+        print_menu(
             query,
             [
-                "".join(userInputChars),
+                "".join(user_input_chars),
                 "".join(
-                    ["—" if i == curserPosition else " " for i in range(maxInputLength)]
+                    [
+                        "—" if i == cursor_position else " "
+                        for i in range(max_input_length)
+                    ]
                 ),
             ],
             stdscr,
             0,
-            xAlignment=maxInputLength // 2,
-            showItemNumber=False,
+            x_alignment=max_input_length // 2,
+            show_item_number=False,
         )
         key = stdscr.getch()
         if key in [curses.KEY_BACKSPACE, ord("\b"), ord("\x7f")]:
-            deleteIndex = curserPosition - 1
-            if deleteIndex >= 0:
-                userInputChars.pop(curserPosition - 1)
-            curserPosition = max(0, curserPosition - 1)
+            delete_index = cursor_position - 1
+            if delete_index >= 0:
+                user_input_chars.pop(cursor_position - 1)
+            cursor_position = max(0, cursor_position - 1)
         elif key in [curses.KEY_DC]:
-            deleteIndex = curserPosition + 1
-            if deleteIndex <= len(userInputChars):
-                userInputChars.pop(curserPosition)
+            delete_index = cursor_position + 1
+            if delete_index <= len(user_input_chars):
+                user_input_chars.pop(cursor_position)
         elif key in [curses.KEY_ENTER, 10, 13]:
-            return "".join(userInputChars)
+            return "".join(user_input_chars)
         elif key == curses.KEY_LEFT:
-            curserPosition = max(0, curserPosition - 1)
+            cursor_position = max(0, cursor_position - 1)
         elif key == curses.KEY_RIGHT:
-            curserPosition = min(len(userInputChars), curserPosition + 1)
+            cursor_position = min(len(user_input_chars), cursor_position + 1)
         elif key == curses.KEY_RESIZE:
             pass
-        elif len(userInputChars) < maxInputLength:
-            userInputChars.insert(curserPosition, chr(key))
-            curserPosition = min(maxInputLength, curserPosition + 1)
+        elif len(user_input_chars) < max_input_length:
+            user_input_chars.insert(cursor_position, chr(key))
+            cursor_position = min(max_input_length, cursor_position + 1)
 
 
 # This function is used to visually represent a query and a number of menu items to the
 # user, by using nCurses. It is used for all text printing in the program (even where
 # no application level menu is presented, i.e by simply not providing a query and no
 # menu objects)
-def printMenu(
+def print_menu(
     query,
     menu,
     stdscr,
-    choiceIndex,
-    xAlignment=None,
-    showItemNumber=True,
-    jumpNumStr="",
+    choice_index,
+    x_alignment=None,
+    show_item_number=True,
+    jump_num_str="",
     canvas=None,
 ):
     if canvas is None:
         canvas = NoCanvas()
     stdscr.clear()
     height, width = stdscr.getmaxyx()
-    screenCenterX = width // 2
-    screenCenterY = height // 2
-    nRowsToPrint = len(menu) + 2
+    screen_center_x = width // 2
+    screen_center_y = height // 2
+    n_rows_to_print = len(menu) + 2
 
-    if xAlignment is not None:
-        itemX = max(min(screenCenterX - xAlignment, width - 2), 0)
+    if x_alignment is not None:
+        item_x = max(min(screen_center_x - x_alignment, width - 2), 0)
     elif menu:
-        menuWidth = max(
+        menu_width = max(
             [
-                len(f"{i+1}: {item}" if showItemNumber else str(item))
+                len(f"{i+1}: {item}" if show_item_number else str(item))
                 for i, item in enumerate(menu)
             ]
         )
-        itemX = max(screenCenterX - menuWidth // 2, 0)
+        item_x = max(screen_center_x - menu_width // 2, 0)
     else:
-        itemX = None
+        item_x = None
 
-    if itemX != 0 and itemX is not None:
-        itemX = max(min(itemX, width - 2), 0)
+    if item_x != 0 and item_x is not None:
+        item_x = max(min(item_x, width - 2), 0)
 
-    jumpNumStr = jumpNumStr[: max(min(len(jumpNumStr), width - 1), 0)]
-    if jumpNumStr:
-        stdscr.addstr(0, 0, jumpNumStr)
+    jump_num_str = jump_num_str[: max(min(len(jump_num_str), width - 1), 0)]
+    if jump_num_str:
+        stdscr.addstr(0, 0, jump_num_str)
 
     offset = 0
-    titleY = screenCenterY - nRowsToPrint // 2
-    if nRowsToPrint >= height - 2:
-        yTitleTheoretical = screenCenterY - nRowsToPrint // 2
-        ySelectedTheoretical = yTitleTheoretical + 2 + choiceIndex
-        yLastTheoretical = yTitleTheoretical + nRowsToPrint - 1
+    title_y = screen_center_y - n_rows_to_print // 2
+    if n_rows_to_print >= height - 2:
+        y_title_theoretical = screen_center_y - n_rows_to_print // 2
+        y_selected_theoretical = y_title_theoretical + 2 + choice_index
+        y_last_theoretical = y_title_theoretical + n_rows_to_print - 1
         offset = min(
-            max(ySelectedTheoretical - screenCenterY, yTitleTheoretical),
-            yLastTheoretical - (height - 2),
+            max(y_selected_theoretical - screen_center_y, y_title_theoretical),
+            y_last_theoretical - (height - 2),
         )
-    titleY -= offset
+    title_y -= offset
 
-    titleX = max(screenCenterX - (len(query) // 2), 0)
-    if titleX != 0:
-        titleX = max(min(abs(titleX), width) * (titleX // abs(titleX)), 0)
+    title_x = max(screen_center_x - (len(query) // 2), 0)
+    if title_x != 0:
+        title_x = max(min(abs(title_x), width) * (title_x // abs(title_x)), 0)
     if len(query) >= width - 1:
         query = query[0 : width - 1]
-    if titleY >= 0 and titleY < height - 1:
-        stdscr.addstr(titleY, titleX, query)
+    if title_y >= 0 and title_y < height - 1:
+        stdscr.addstr(title_y, title_x, query)
     for i, item in enumerate(menu):
-        itemString = f"{i+1}: {item}" if showItemNumber else str(item)
-        if itemX + len(itemString) >= width - 1:
-            itemString = itemString[: max((width - itemX - 2), 0)]
-        attr = curses.color_pair(HIGHLIGHTED if i == choiceIndex else NOT_HIGHLIGHTED)
+        item_string = f"{i+1}: {item}" if show_item_number else str(item)
+        if item_x + len(item_string) >= width - 1:
+            item_string = item_string[: max((width - item_x - 2), 0)]
+        attr = curses.color_pair(HIGHLIGHTED if i == choice_index else NOT_HIGHLIGHTED)
         if (
-            i == choiceIndex
+            i == choice_index
             and hasattr(item, "description")
             and hasattr(item.description, "getThumbnail")
             and type(canvas) is not NoCanvas
         ):
-            thumbnailWidth = itemX - 1
-            thumbnailHeight = height - 3
-            if not (thumbnailWidth <= 0 or thumbnailHeight <= 0):
-                thumbnailPlacement = canvas.create_placement(
+            thumbnail_width = item_x - 1
+            thumbnail_height = height - 3
+            if not (thumbnail_width <= 0 or thumbnail_height <= 0):
+                thumbnail_placement = canvas.create_placement(
                     "thumbnail",
                     x=0,
                     y=2,
                     scaler=ueberzug.ScalerOption.CONTAIN.value,
-                    width=thumbnailWidth,
-                    height=thumbnailHeight,
+                    width=thumbnail_width,
+                    height=thumbnail_height,
                 )
-                thumbnailPlacement.path = item.description.getThumbnail()
-                thumbnailPlacement.visibility = ueberzug.Visibility.VISIBLE
+                thumbnail_placement.path = item.description.get_thumbnail()
+                thumbnail_placement.visibility = ueberzug.Visibility.VISIBLE
         stdscr.attron(attr)
-        itemY = screenCenterY - nRowsToPrint // 2 + i + 2 - offset
-        if itemY >= 0 and itemY < height - 1 and itemString:
-            stdscr.addstr(itemY, itemX, itemString)
+        item_y = screen_center_y - n_rows_to_print // 2 + i + 2 - offset
+        if item_y >= 0 and item_y < height - 1 and item_string:
+            stdscr.addstr(item_y, item_x, item_string)
         stdscr.attroff(attr)
     stdscr.refresh()
 
@@ -700,68 +714,68 @@ Functions for retreiving and processing network data
 
 
 # use this function to make HTTP requests without using Tor
-def unProxiedGetHttpContent(url, session=None, method="GET", postPayload={}):
+def unproxied_get_http_content(url, session=None, method="GET", post_payload={}):
     if session is None:
         if method == "GET":
             return req.get(url)
         elif method == "POST":
-            return req.post(url, postPayload)
+            return req.post(url, post_payload)
     else:
         if method == "GET":
             return session.get(url)
         elif method == "POST":
-            return session.post(url, postPayload)
+            return session.post(url, post_payload)
 
 
 # use this function to get content (typically hypertext or xml) using HTTP from YouTube
-def getHttpContent(url, circuitManager=None, auth=None):
+def get_http_content(url, circuit_manager=None, auth=None):
     session = req.Session()
     session.headers["Accept-Language"] = "en-US"
     # This cookie lets us avoid the YouTube consent page
     session.cookies["CONSENT"] = "YES+"
-    response = unProxiedGetHttpContent(url, session=session)
+    response = unproxied_get_http_content(url, session=session)
 
     return response
 
 
 # if you have a channel id, you can use this function to get the rss address
-def getRssAddressFromChannelId(channelId):
-    return f"https://www.youtube.com/feeds/videos.xml?channel_id={channelId}"
+def get_rss_address_from_channel_id(channel_id):
+    return f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
 
 
 # use this function to get a list of query results from searching for a channel
 # results are of the type ChannelQueryObject
-def getChannelQueryResults(query, circuitManager=None):
+def get_channel_query_results(query, circuit_manager=None):
     url = (
         "https://youtube.com/results?search_query="
         + urllib.parse.quote(query)
         + "&sp=EgIQAg%253D%253D"
     )
-    htmlContent = getHttpContent(url, circuitManager=circuitManager).text
+    html_ceontent = get_http_content(url, circuit_manager=circuit_manager).text
     parser = ChannelQueryParser()
-    parser.feed(htmlContent)
-    return parser.resultList
+    parser.feed(html_ceontent)
+    return parser.result_list
 
 
 # use this function to get a list of query results from searching for a video
 # results are of the type VideoQueryObject
-def getVideoQueryResults(query, runtimeConstants, circuitManager=None):
+def get_video_query_results(query, runtime_constants, circuit_manager=None):
     url = (
         "https://youtube.com/results?search_query="
         + urllib.parse.quote(query)
         + "&sp=EgIQAQ%253D%253D"
     )
-    htmlContent = getHttpContent(url, circuitManager=circuitManager).text
+    html_ceontent = get_http_content(url, circuit_manager=circuit_manager).text
     parser = VideoQueryParser()
-    parser.feed(htmlContent)
+    parser.feed(html_ceontent)
     if USE_THUMBNAILS:
         if os.path.isdir(THUMBNAIL_SEARCH_DIR):
             shutil.rmtree(THUMBNAIL_SEARCH_DIR)
         os.mkdir(THUMBNAIL_SEARCH_DIR)
         process = Process(
-            target=getSearchThumbnails,
-            args=[parser.resultList, runtimeConstants],
-            kwargs={"circuitManager": circuitManager},
+            target=get_search_thumbnails,
+            args=[parser.result_list, runtime_constants],
+            kwargs={"circuit_manager": circuit_manager},
         )
         try:
             process.start()
@@ -771,20 +785,20 @@ def getVideoQueryResults(query, runtimeConstants, circuitManager=None):
             raise e
         if process.exitcode != 0:
             raise ProcessError
-    return parser.resultList
+    return parser.result_list
 
 
 # use this function to get rss entries from channel id
-def getRssEntriesFromChannelId(channelId, circuitManager=None):
-    rssAddress = getRssAddressFromChannelId(channelId)
-    rssContent = getHttpContent(rssAddress, circuitManager=circuitManager).text
-    entries = feedparser.parse(rssContent)["entries"]
+def get_rss_entries_from_channel_id(channel_id, circuit_manager=None):
+    rss_address = get_rss_address_from_channel_id(channel_id)
+    rss_content = get_http_content(rss_address, circuit_manager=circuit_manager).text
+    entries = feedparser.parse(rss_content)["entries"]
     return entries
 
 
 # use this function to initialize the database (dict format so it's easy to save
 # as json)
-def initiateYouTubeRssDatabase():
+def initiate_youtube_rss_database():
     database = Database({})
     database["feeds"] = Database({})
     database["id to title"] = Database({})
@@ -793,65 +807,65 @@ def initiateYouTubeRssDatabase():
 
 
 # use this function to add a subscription to the database
-def addSubscriptionToDatabase(
-    channelId, runtimeConstants, channelTitle, refresh=False, circuitManager=None
+def add_subscription_to_database(
+    channel_id, runtime_constants, channel_title, refresh=False, circuit_manager=None
 ):
-    database = parseDatabaseFile(DATABASE_PATH)
-    database["feeds"][channelId] = []
-    database["id to title"][channelId] = channelTitle
-    database["title to id"][channelTitle] = channelId
-    outputDatabaseToFile(database, DATABASE_PATH)
+    database = parse_database_file(DATABASE_PATH)
+    database["feeds"][channel_id] = []
+    database["id to title"][channel_id] = channel_title
+    database["title to id"][channel_title] = channel_id
+    output_database_to_file(database, DATABASE_PATH)
     if refresh:
-        refreshSubscriptionsByChannelId(
-            [channelId], runtimeConstants, circuitManager=circuitManager
+        refresh_subscriptions_by_channel_id(
+            [channel_id], runtime_constants, circuit_manager=circuit_manager
         )
 
 
-def deleteThumbnailsByChannelTitle(database, channelTitle):
-    if channelTitle not in database["title to id"]:
+def delete_thumbnails_by_channel_title(database, channel_title):
+    if channel_title not in database["title to id"]:
         return
-    channelId = database["title to id"][channelTitle]
-    deleteThumbnailsByChannelId(database, channelId)
+    channel_id = database["title to id"][channel_title]
+    delete_thumbnails_by_channel_id(database, channel_id)
     return
 
 
-def deleteThumbnailsByChannelId(database, channelId):
-    if channelId not in database["id to title"]:
+def delete_thumbnails_by_channel_id(database, channel_id):
+    if channel_id not in database["id to title"]:
         return
-    feed = database["feeds"][channelId]
+    feed = database["feeds"][channel_id]
     for entry in feed:
         if os.path.isfile(entry["thumbnail file"]):
             os.remove(entry["thumbnail file"])
 
 
 # use this function to remove a subscription from the database by channel title
-def removeSubscriptionFromDatabaseByChannelTitle(database, channelTitle):
-    if channelTitle not in database["title to id"]:
+def remove_subscription_from_database_by_channel_title(database, channel_title):
+    if channel_title not in database["title to id"]:
         return
-    channelId = database["title to id"][channelTitle]
-    removeSubscriptionFromDatabaseByChannelId(database, channelId)
+    channel_id = database["title to id"][channel_title]
+    remove_subscription_from_database_by_channel_id(database, channel_id)
     return
 
 
 # use this function to remove a subscription from the database by channel ID
-def removeSubscriptionFromDatabaseByChannelId(database, channelId):
-    if channelId not in database["id to title"]:
+def remove_subscription_from_database_by_channel_id(database, channel_id):
+    if channel_id not in database["id to title"]:
         return
-    channelTitle = database["id to title"].pop(channelId)
-    database["title to id"].pop(channelTitle)
-    database["feeds"].pop(channelId)
-    outputDatabaseToFile(database, DATABASE_PATH)
+    channel_title = database["id to title"].pop(channel_id)
+    database["title to id"].pop(channel_title)
+    database["feeds"].pop(channel_id)
+    output_database_to_file(database, DATABASE_PATH)
 
 
 # use this function to retrieve new RSS entries for a subscription and add them to
 # a database
-def refreshSubscriptionsByChannelId(
-    channelIdList, runtimeConstants, circuitManager=None
+def refresh_subscriptions_by_channel_id(
+    channel_id_list, runtime_constants, circuit_manager=None
 ):
     process = Process(
-        target=refreshSubscriptionsByChannelIdProcess,
-        args=[channelIdList, runtimeConstants],
-        kwargs={"circuitManager": circuitManager},
+        target=refresh_subscriptions_by_channel_id_process,
+        args=[channel_id_list, runtime_constants],
+        kwargs={"circuit_manager": circuit_manager},
     )
     try:
         process.start()
@@ -863,87 +877,89 @@ def refreshSubscriptionsByChannelId(
         raise ProcessError
 
 
-def refreshSubscriptionsByChannelIdProcess(
-    channelIdList, runtimeConstants, circuitManager=None
+def refresh_subscriptions_by_channel_id_process(
+    channel_id_list, runtime_constants, circuit_manager=None
 ):
-    database = parseDatabaseFile(DATABASE_PATH)
-    localFeeds = database["feeds"]
+    database = parse_database_file(DATABASE_PATH)
+    local_feeds = database["feeds"]
     threads = []
-    for channelId in channelIdList:
-        localFeed = localFeeds[channelId]
+    for channel_id in channel_id_list:
+        local_feed = local_feeds[channel_id]
         thread = ErrorCatchingThread(
-            refreshSubscriptionByChannelId,
-            channelId,
-            localFeed,
-            circuitManager=circuitManager,
+            refresh_subscription_by_channel_id,
+            channel_id,
+            local_feed,
+            circuit_manager=circuit_manager,
         )
         threads.append(thread)
         thread.start()
     for thread in threads:
         thread.join()
-    if runtimeConstants["USE_THUMBNAILS"]:
-        getThumbnailsForAllSubscriptions(
-            channelIdList, database, circuitManager=circuitManager
+    if runtime_constants["USE_THUMBNAILS"]:
+        get_thumbnails_for_all_subscriptions(
+            channel_id_list, database, circuit_manager=circuit_manager
         )
-    outputDatabaseToFile(database, runtimeConstants["DATABASE_PATH"])
+    output_database_to_file(database, runtime_constants["DATABASE_PATH"])
 
 
-def refreshSubscriptionByChannelId(channelId, localFeed, circuitManager=None):
-    remoteFeed = getRssEntriesFromChannelId(channelId, circuitManager=circuitManager)
-    if remoteFeed is not None:
-        remoteFeed.reverse()
-        for entry in remoteFeed:
-            filteredEntry = getRelevantDictFromFeedParserDict(entry)
+def refresh_subscription_by_channel_id(channel_id, local_feed, circuit_manager=None):
+    remote_feed = get_rss_entries_from_channel_id(
+        channel_id, circuit_manager=circuit_manager
+    )
+    if remote_feed is not None:
+        remote_feed.reverse()
+        for entry in remote_feed:
+            filtered_entry = get_relevant_dict_from_feed_parser_dict(entry)
 
-            filteredEntryIsNew = True
-            for i, localEntry in enumerate(localFeed):
-                if localEntry["id"] == filteredEntry["id"]:
-                    filteredEntryIsNew = False
+            filtered_entry_is_new = True
+            for i, local_entry in enumerate(local_feed):
+                if local_entry["id"] == filtered_entry["id"]:
+                    filtered_entry_is_new = False
                     # in case any relevant data about the entry is changed, update it
-                    filteredEntry["seen"] = localEntry["seen"]
+                    filtered_entry["seen"] = local_entry["seen"]
                     if (
-                        filteredEntry["thumbnail"] == localEntry["thumbnail"]
-                        and "thumbnail file" in filteredEntry
+                        filtered_entry["thumbnail"] == local_entry["thumbnail"]
+                        and "thumbnail file" in filtered_entry
                     ):
-                        filteredEntry["thumbnail file"] = localEntry["thumbnail file"]
-                    localFeed[i] = filteredEntry
+                        filtered_entry["thumbnail file"] = local_entry["thumbnail file"]
+                    local_feed[i] = filtered_entry
                     break
-            if filteredEntryIsNew:
-                localFeed.insert(0, filteredEntry)
+            if filtered_entry_is_new:
+                local_feed.insert(0, filtered_entry)
 
 
 # use this function to open a YouTube video url in mpv
-def openUrlInMpv(url, maxResolution=1080, circuitManager=None):
+def open_url_in_mpv(url, max_resolution=1080, circuit_manager=None):
     try:
         command = []
         command += [
             "mpv",
-            f"--ytdl-format=bestvideo[height=?{maxResolution}]+bestaudio/best",
+            f"--ytdl-format=bestvideo[height=?{max_resolution}]+bestaudio/best",
         ]
         command.append(url)
-        mpvProcess = subprocess.Popen(
+        mpv_process = subprocess.Popen(
             command, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT
         )
-        mpvProcess.wait()
-        result = mpvProcess.poll()
+        mpv_process.wait()
+        result = mpv_process.poll()
     except KeyboardInterrupt:
-        mpvProcess.kill()
-        mpvProcess.wait()
+        mpv_process.kill()
+        mpv_process.wait()
         result = -1
     return result == 0
 
 
 # use this function to get the data we care about from the entries found by the
 # RSS parser
-def getRelevantDictFromFeedParserDict(feedparserDict):
-    outputDict = {
-        "id": feedparserDict["id"],
-        "link": feedparserDict["link"],
-        "title": feedparserDict["title"],
-        "thumbnail": feedparserDict["media_thumbnail"][0]["url"],
+def get_relevant_dict_from_feed_parser_dict(feedparser_dict):
+    output_dict = {
+        "id": feedparser_dict["id"],
+        "link": feedparser_dict["link"],
+        "title": feedparser_dict["title"],
+        "thumbnail": feedparser_dict["media_thumbnail"][0]["url"],
         "seen": False,
     }
-    return outputDict
+    return output_dict
 
 
 """
@@ -951,26 +967,16 @@ Functions for managing database persistence between user sessions
 """
 
 
-# use this function to read database from json string
-def parseDatabaseContent(content):
-    return json.loads(content, cls=DatabaseDecoder)
-
-
 # use this function to read database from json file
-def parseDatabaseFile(filename):
-    with open(filename, "r") as filePointer:
-        return json.load(filePointer, cls=DatabaseDecoder)
-
-
-# use this function to return json representation of database as string
-def getDatabaseString(database):
-    return json.dumps(database, indent=4, cls=DatabaseEncoder)
+def parse_database_file(filename):
+    with open(filename, "r") as file_pointer:
+        return json.load(file_pointer, cls=DatabaseDecoder)
 
 
 # use this function to write json representation of database to file
-def outputDatabaseToFile(database, filename):
-    with open(filename, "w") as filePointer:
-        return json.dump(database, filePointer, indent=4, cls=DatabaseEncoder)
+def output_database_to_file(database, filename):
+    with open(filename, "w") as file_pointer:
+        return json.dump(database, file_pointer, indent=4, cls=DatabaseEncoder)
 
 
 """
@@ -978,90 +984,97 @@ Application control flow
 """
 
 
-def doMarkChannelAsRead(database, channelId):
-    allAreAlreadyMarkedAsRead = True
-    for video in database["feeds"][channelId]:
+def do_mark_channel_as_read(database, channel_id):
+    all_are_already_marked_as_read = True
+    for video in database["feeds"][channel_id]:
         if not video["seen"]:
-            allAreAlreadyMarkedAsRead = False
+            all_are_already_marked_as_read = False
             break
-    for video in database["feeds"][channelId]:
-        video["seen"] = not allAreAlreadyMarkedAsRead
-    outputDatabaseToFile(database, DATABASE_PATH)
+    for video in database["feeds"][channel_id]:
+        video["seen"] = not all_are_already_marked_as_read
+    output_database_to_file(database, DATABASE_PATH)
 
 
 # this is the application level flow entered when the user has chosen to search for a
 # video
-def doInteractiveSearchForVideo(runtimeConstants, circuitManager=None):
-    query = doGetUserInput("Search for video: ")
+def do_interactive_search_for_video(runtime_constants, circuit_manager=None):
+    query = do_get_user_input("Search for video: ")
     querying = True
     while querying:
         try:
-            resultList = doWaitScreen(
+            result_list = do_wait_screen(
                 "Getting video results...",
-                getVideoQueryResults,
+                get_video_query_results,
                 query,
-                runtimeConstants,
-                circuitManager=circuitManager,
+                runtime_constants,
+                circuit_manager=circuit_manager,
             )
-            if resultList:
-                menuOptions = [
+            if result_list:
+                menu_options = [
                     MethodMenuDecision(
                         VideoQueryObjectDescriber(result),
-                        playVideo,
+                        play_video,
                         result.url,
-                        circuitManager=circuitManager,
+                        circuit_manager=circuit_manager,
                     )
-                    for result in resultList
+                    for result in result_list
                 ]
-                menuOptions.insert(0, MethodMenuDecision("[Go back]", doReturnFromMenu))
-                doMethodMenu(f"Search results for '{query}':", menuOptions)
+                menu_options.insert(
+                    0, MethodMenuDecision("[Go back]", do_return_from_menu)
+                )
+                do_method_menu(f"Search results for '{query}':", menu_options)
                 querying = False
             else:
-                doNotify("no results found")
+                do_notify("no results found")
                 querying = False
         except ProcessError:
-            if not doYesNoQuery("Something went wrong. Try again?"):
+            if not do_yes_no_query("Something went wrong. Try again?"):
                 querying = False
     if os.path.isdir(THUMBNAIL_SEARCH_DIR):
         shutil.rmtree(THUMBNAIL_SEARCH_DIR)
 
 
-def getThumbnailsForAllSubscriptions(channelIdList, database, circuitManager=None):
+def get_thumbnails_for_all_subscriptions(
+    channel_id_list, database, circuit_manager=None
+):
     feeds = database["feeds"]
     threads = []
-    for channelId in channelIdList:
-        if circuitManager is not None:
-            auth = circuitManager.getAuth()
+    for channel_id in channel_id_list:
+        if circuit_manager is not None:
+            auth = circuit_manager.getAuth()
         else:
             auth = None
-        feed = feeds[channelId]
-        thread = ErrorCatchingThread(getThumbnailsForFeed, feed, auth=auth)
+        feed = feeds[channel_id]
+        thread = ErrorCatchingThread(get_thumbnails_for_feed, feed, auth=auth)
         threads.append(thread)
         thread.start()
     for thread in threads:
         thread.join()
 
 
-def getThumbnailsForFeed(feed, auth=None):
+def get_thumbnails_for_feed(feed, auth=None):
     for entry in feed:
         if "thumbnail file" in entry:
             continue
-        videoId = entry["id"].split(":")[-1]
-        thumbnailFileName = "/".join([THUMBNAIL_DIR, videoId + ".jpg"])
-        thumbnailContent = getHttpContent(entry["thumbnail"], auth=auth)
-        entry["thumbnail file"] = thumbnailFileName
-        open(thumbnailFileName, "wb").write(thumbnailContent.content)
+        video_id = entry["id"].split(":")[-1]
+        thumbnail_filename = "/".join([THUMBNAIL_DIR, video_id + ".jpg"])
+        thumbnail_content = get_http_content(entry["thumbnail"], auth=auth)
+        entry["thumbnail file"] = thumbnail_filename
+        open(thumbnail_filename, "wb").write(thumbnail_content.content)
 
 
-def getSearchThumbnails(resultList, runtimeConstants, circuitManager=None):
-    if circuitManager is not None:
-        auth = circuitManager.getAuth()
+def get_search_thumbnails(result_list, runtime_constants, circuit_manager=None):
+    if circuit_manager is not None:
+        auth = circuit_manager.getAuth()
     else:
         auth = None
     threads = []
-    for result in resultList:
+    for result in result_list:
         thread = ErrorCatchingThread(
-            getSearchThumbnailFromSearchResult, result, runtimeConstants, auth=auth
+            get_search_thumbnail_from_search_result,
+            result,
+            runtime_constants,
+            auth=auth,
         )
         threads.append(thread)
         thread.start()
@@ -1069,194 +1082,200 @@ def getSearchThumbnails(resultList, runtimeConstants, circuitManager=None):
         thread.join()
 
 
-def getSearchThumbnailFromSearchResult(result, runtimeConstants, auth=None):
-    videoId = result.videoId.split(":")[-1]
-    thumbnailFileName = "/".join(
-        [runtimeConstants["THUMBNAIL_SEARCH_DIR"], videoId + ".jpg"]
+def get_search_thumbnail_from_search_result(result, runtime_constants, auth=None):
+    video_id = result.video_id.split(":")[-1]
+    thumbnail_filename = "/".join(
+        [runtime_constants["THUMBNAIL_SEARCH_DIR"], video_id + ".jpg"]
     )
-    thumbnailContent = getHttpContent(result.thumbnail, auth=auth)
-    result.thumbnailFile = thumbnailFileName
-    open(thumbnailFileName, "wb").write(thumbnailContent.content)
+    thumbnail_content = get_http_content(result.thumbnail, auth=auth)
+    result.thumbnailFile = thumbnail_filename
+    open(thumbnail_filename, "wb").write(thumbnail_content.content)
 
 
 # this is the application level flow entered when the user has chosen to subscribe to a
 # new channel
-def doInteractiveChannelSubscribe(runtimeConstants, circuitManager=None):
-    query = doGetUserInput("Enter channel to search for: ")
+def do_interactive_channel_subscribe(runtime_constants, circuit_manager=None):
+    query = do_get_user_input("Enter channel to search for: ")
     querying = True
     while querying:
         try:
-            resultList = doWaitScreen(
+            result_list = do_wait_screen(
                 "Getting channel results...",
-                getChannelQueryResults,
+                get_channel_query_results,
                 query,
-                circuitManager=circuitManager,
+                circuit_manager=circuit_manager,
             )
-            if resultList:
-                menuOptions = [
+            if result_list:
+                menu_options = [
                     MethodMenuDecision(
                         str(result),
-                        doChannelSubscribe,
+                        do_channel_subscribe,
                         result=result,
-                        circuitManager=circuitManager,
-                        runtimeConstants=runtimeConstants,
+                        circuit_manager=circuit_manager,
+                        runtime_constants=runtime_constants,
                     )
-                    for result in resultList
+                    for result in result_list
                 ]
-                menuOptions.insert(0, MethodMenuDecision("[Go back]", doReturnFromMenu))
-                doMethodMenu(
+                menu_options.insert(
+                    0, MethodMenuDecision("[Go back]", do_return_from_menu)
+                )
+                do_method_menu(
                     f"search results for '{query}', choose which "
                     + "channel to supscribe to",
-                    menuOptions,
+                    menu_options,
                 )
                 querying = False
             else:
-                if not doYesNoQuery("No results found. Try again?"):
+                if not do_yes_no_query("No results found. Try again?"):
                     querying = False
         except req.exceptions.ConnectionError:
-            if not doYesNoQuery("Something went wrong with the connection. Try again?"):
+            if not do_yes_no_query(
+                "Something went wrong with the connection. Try again?"
+            ):
                 querying = False
 
 
 # this is the application level flow entered when the user has chosen a channel that it
 # wants to subscribe to
-def doChannelSubscribe(result, circuitManager, runtimeConstants):
-    database = doWaitScreen("", parseDatabaseFile, DATABASE_PATH)
+def do_channel_subscribe(result, circuit_manager, runtime_constants):
+    database = do_wait_screen("", parse_database_file, DATABASE_PATH)
     refreshing = True
-    if result.channelId in database["feeds"]:
-        doNotify("Already subscribed to this channel!")
+    if result.channel_id in database["feeds"]:
+        do_notify("Already subscribed to this channel!")
         return
     while refreshing:
         try:
-            doWaitScreen(
+            do_wait_screen(
                 f"getting data from feed for {result.title}...",
-                addSubscriptionToDatabase,
-                result.channelId,
-                runtimeConstants,
+                add_subscription_to_database,
+                result.channel_id,
+                runtime_constants,
                 result.title,
                 refresh=True,
-                circuitManager=circuitManager,
+                circuit_manager=circuit_manager,
             )
             refreshing = False
         except req.exceptions.ConnectionError:
-            if not doYesNoQuery(
+            if not do_yes_no_query(
                 "Something went wrong with the " + "connection. Try again?"
             ):
-                doChannelUnsubscribe(result.title)
+                do_channel_unsubscribe(result.title)
                 refreshing = False
     return ReturnFromMenu
 
 
 # this is the application level flow entered when the user has chosen to unsubscribe to
 # a channel
-def doInteractiveChannelUnsubscribe():
-    database = doWaitScreen("", parseDatabaseFile, DATABASE_PATH)
+def do_interactive_channel_unsubscribe():
+    database = do_wait_screen("", parse_database_file, DATABASE_PATH)
     if not database["title to id"]:
-        doNotify("You are not subscribed to any channels")
+        do_notify("You are not subscribed to any channels")
         return
-    menuOptions = [
-        MethodMenuDecision(channelTitle, doChannelUnsubscribe, channelTitle)
-        for channelTitle in database["title to id"]
+    menu_options = [
+        MethodMenuDecision(channel_title, do_channel_unsubscribe, channel_title)
+        for channel_title in database["title to id"]
     ]
-    menuOptions.insert(0, MethodMenuDecision("[Go back]", doReturnFromMenu))
-    doMethodMenu("Which channel do you want to unsubscribe from?", menuOptions)
+    menu_options.insert(0, MethodMenuDecision("[Go back]", do_return_from_menu))
+    do_method_menu("Which channel do you want to unsubscribe from?", menu_options)
 
 
 # this is the application level flow entered when the user has chosen a channel that it
 # wants to unsubscribe from
-def doChannelUnsubscribe(channelTitle):
-    database = doWaitScreen("", parseDatabaseFile, DATABASE_PATH)
+def do_channel_unsubscribe(channel_title):
+    database = do_wait_screen("", parse_database_file, DATABASE_PATH)
     if USE_THUMBNAILS:
-        deleteThumbnailsByChannelTitle(database, channelTitle)
-    removeSubscriptionFromDatabaseByChannelTitle(database, channelTitle)
-    outputDatabaseToFile(database, DATABASE_PATH)
+        delete_thumbnails_by_channel_title(database, channel_title)
+    remove_subscription_from_database_by_channel_title(database, channel_title)
+    output_database_to_file(database, DATABASE_PATH)
     return ReturnFromMenu
 
 
 # this is the application level flow entered when the user has chosen to browse
 # its current subscriptions
-def doInteractiveBrowseSubscriptions(circuitManager):
-    database = doWaitScreen("", parseDatabaseFile, DATABASE_PATH)
-    menuOptions = [
+def do_interactive_browse_subscriptions(circuit_manager):
+    database = do_wait_screen("", parse_database_file, DATABASE_PATH)
+    menu_options = [
         MethodMenuDecision(
             FeedDescriber(
-                database["feeds"][database["title to id"][channelTitle]], channelTitle
+                database["feeds"][database["title to id"][channel_title]], channel_title
             ),
-            doSelectVideoFromSubscription,
+            do_select_video_from_subscription,
             database,
-            channelTitle,
-            circuitManager,
+            channel_title,
+            circuit_manager,
         )
-        for channelTitle in database["title to id"]
+        for channel_title in database["title to id"]
     ]
 
-    adHocKeys = [
-        MarkAllAsReadKey(channelId, i + 1, database)
-        for i, channelId in enumerate(database["feeds"])
+    adhoc_keys = [
+        MarkAllAsReadKey(channel_id, i + 1, database)
+        for i, channel_id in enumerate(database["feeds"])
     ]
 
-    if not menuOptions:
-        doNotify("You are not subscribed to any channels")
+    if not menu_options:
+        do_notify("You are not subscribed to any channels")
         return
 
-    menuOptions.insert(0, MethodMenuDecision("[Go back]", doReturnFromMenu))
-    doMethodMenu(
+    menu_options.insert(0, MethodMenuDecision("[Go back]", do_return_from_menu))
+    do_method_menu(
         "Which channel do you want to watch a video from?",
-        menuOptions,
-        adHocKeys=adHocKeys,
+        menu_options,
+        adhoc_keys=adhoc_keys,
     )
 
 
 # this is the application level flow entered when the user has chosen a channel while
 # browsing its current subscriptions;
 # the user now gets to select a video from the channel to watch
-def doSelectVideoFromSubscription(database, channelTitle, circuitManager):
-    channelId = database["title to id"][channelTitle]
-    videos = database["feeds"][channelId]
-    menuOptions = [
+def do_select_video_from_subscription(database, channel_title, circuit_manager):
+    channel_id = database["title to id"][channel_title]
+    videos = database["feeds"][channel_id]
+    menu_options = [
         MethodMenuDecision(
             FeedVideoDescriber(video),
-            doPlayVideoFromSubscription,
+            do_play_video_from_subscription,
             database,
             video,
-            circuitManager,
+            circuit_manager,
         )
         for video in videos
     ]
 
-    adHocKeys = [MarkEntryAsReadKey(video, i + 1) for i, video in enumerate(videos)]
-    outputDatabaseToFile(database, DATABASE_PATH)
-    menuOptions.insert(0, MethodMenuDecision("[Go back]", doReturnFromMenu))
-    doMethodMenu("Which video do you want to watch?", menuOptions, adHocKeys=adHocKeys)
-    outputDatabaseToFile(database, DATABASE_PATH)
+    adhoc_keys = [MarkEntryAsReadKey(video, i + 1) for i, video in enumerate(videos)]
+    output_database_to_file(database, DATABASE_PATH)
+    menu_options.insert(0, MethodMenuDecision("[Go back]", do_return_from_menu))
+    do_method_menu(
+        "Which video do you want to watch?", menu_options, adhoc_keys=adhoc_keys
+    )
+    output_database_to_file(database, DATABASE_PATH)
 
 
 # this is the application level flow entered when the user has selected a video to watch
 # while browsing its current subscriptions
-def doPlayVideoFromSubscription(database, video, circuitManager):
-    result = playVideo(video["link"], circuitManager=circuitManager)
+def do_play_video_from_subscription(database, video, circuit_manager):
+    result = play_video(video["link"], circuit_manager=circuit_manager)
     if not video["seen"]:
         video["seen"] = result
-        outputDatabaseToFile(database, DATABASE_PATH)
+        output_database_to_file(database, DATABASE_PATH)
 
 
 # this is the application level flow entered when the user is watching any video from
 # YouTube
-def playVideo(videoUrl, circuitManager=None):
-    resolutionMenuList = [1080, 720, 480, 240]
-    maxResolution = doSelectionQuery(
-        "Which maximum resolution do you want to use?", resolutionMenuList
+def play_video(video_url, circuit_manager=None):
+    resolution_menu_list = [1080, 720, 480, 240]
+    max_resolution = do_selection_query(
+        "Which maximum resolution do you want to use?", resolution_menu_list
     )
     result = False
     while not result:
-        result = doWaitScreen(
+        result = do_wait_screen(
             "playing video...",
-            openUrlInMpv,
-            videoUrl,
-            maxResolution=maxResolution,
-            circuitManager=circuitManager,
+            open_url_in_mpv,
+            video_url,
+            max_resolution=max_resolution,
+            circuit_manager=circuit_manager,
         )
-        if result or not doYesNoQuery(
+        if result or not do_yes_no_query(
             "Something went wrong when playing the " + "video. Try again?"
         ):
             break
@@ -1265,77 +1284,77 @@ def playVideo(videoUrl, circuitManager=None):
 
 # this is the application level flow entered when the user has chosen to refresh its
 # subscriptions
-def doRefreshSubscriptions(runtimeConstants, circuitManager=None):
-    database = doWaitScreen("", parseDatabaseFile, DATABASE_PATH)
-    channelIdList = list(database["id to title"])
+def do_refresh_subscriptions(runtime_constants, circuit_manager=None):
+    database = do_wait_screen("", parse_database_file, DATABASE_PATH)
+    channel_id_list = list(database["id to title"])
     refreshing = True
     while refreshing:
         try:
-            doWaitScreen(
+            do_wait_screen(
                 "refreshing subscriptions...",
-                refreshSubscriptionsByChannelId,
-                channelIdList,
-                runtimeConstants,
-                circuitManager=circuitManager,
+                refresh_subscriptions_by_channel_id,
+                channel_id_list,
+                runtime_constants,
+                circuit_manager=circuit_manager,
             )
             refreshing = False
         except ProcessError:
-            if not doYesNoQuery("Something went wrong. Try again?"):
+            if not do_yes_no_query("Something went wrong. Try again?"):
                 refreshing = False
 
 
-def doMainMenu(runtimeConstants, circuitManager=None):
-    menuOptions = [
+def do_main_menu(runtime_constants, circuit_manager=None):
+    menu_options = [
         MethodMenuDecision(
             "Search for video",
-            doInteractiveSearchForVideo,
-            runtimeConstants,
-            circuitManager=circuitManager,
+            do_interactive_search_for_video,
+            runtime_constants,
+            circuit_manager=circuit_manager,
         ),
         MethodMenuDecision(
             "Refresh subscriptions",
-            doRefreshSubscriptions,
-            runtimeConstants,
-            circuitManager=circuitManager,
+            do_refresh_subscriptions,
+            runtime_constants,
+            circuit_manager=circuit_manager,
         ),
         MethodMenuDecision(
             "Browse subscriptions",
-            doInteractiveBrowseSubscriptions,
-            circuitManager=circuitManager,
+            do_interactive_browse_subscriptions,
+            circuit_manager=circuit_manager,
         ),
         MethodMenuDecision(
             "Subscribe to new channel",
-            doInteractiveChannelSubscribe,
-            runtimeConstants,
-            circuitManager=circuitManager,
+            do_interactive_channel_subscribe,
+            runtime_constants,
+            circuit_manager=circuit_manager,
         ),
         MethodMenuDecision(
             "Unsubscribe from channel",
-            doInteractiveChannelUnsubscribe,
+            do_interactive_channel_unsubscribe,
         ),
-        MethodMenuDecision("Quit", doReturnFromMenu),
+        MethodMenuDecision("Quit", do_return_from_menu),
     ]
-    doMethodMenu("What do you want to do?", menuOptions)
+    do_method_menu("What do you want to do?", menu_options)
     return ReturnFromMenu
 
 
 # this is a function for managing menu hierarchies; once called, a menu presents
 # application flows available to the user. If called from a flow selected in a previous
 # method menu, the menu becomes a new branch one step further from the root menu
-def doMethodMenu(query, menuOptions, showItemNumber=True, adHocKeys=[]):
+def do_method_menu(query, menu_options, show_item_number=True, adhoc_keys=[]):
     index = 0
     try:
         while True:
-            methodMenuDecision, index = doSelectionQuery(
+            method_menu_decision, index = do_selection_query(
                 query,
-                menuOptions,
-                initialIndex=index,
-                queryStyle=CombinedQuery,
-                showItemNumber=showItemNumber,
-                adHocKeys=adHocKeys,
+                menu_options,
+                initial_index=index,
+                query_style=CombinedQuery,
+                show_item_number=show_item_number,
+                adhoc_keys=adhoc_keys,
             )
             try:
-                result = methodMenuDecision.executeDecision()
+                result = method_menu_decision.execute_decision()
             except KeyboardInterrupt:
                 result = None
                 pass
@@ -1345,14 +1364,9 @@ def doMethodMenu(query, menuOptions, showItemNumber=True, adHocKeys=[]):
         return
 
 
-def doNotifyAndReturnFromMenu(message):
-    doNotify(message)
-    return ReturnFromMenu
-
-
 # this function is an application level flow which when selected from a method
 # menu simply returns to the preceding menu (one step closer to the root menu)
-def doReturnFromMenu():
+def do_return_from_menu():
     return ReturnFromMenu
 
 
@@ -1379,7 +1393,7 @@ if __name__ == "__main__":
         if not flag.treated:
             raise command_line_parser.CommandLineParseError
 
-    runtimeConstants = {
+    runtime_constants = {
         "USE_THUMBNAILS": USE_THUMBNAILS,
         "HOME": HOME,
         "YOUTUBE_RSS_DIR": YOUTUBE_RSS_DIR,
@@ -1397,10 +1411,10 @@ if __name__ == "__main__":
     if not os.path.isdir(THUMBNAIL_DIR) and USE_THUMBNAILS:
         os.mkdir(THUMBNAIL_DIR)
     if not os.path.isfile(DATABASE_PATH):
-        database = initiateYouTubeRssDatabase()
-        doWaitScreen("", outputDatabaseToFile, database, DATABASE_PATH)
+        database = initiate_youtube_rss_database()
+        do_wait_screen("", output_database_to_file, database, DATABASE_PATH)
     else:
-        database = doWaitScreen("", parseDatabaseFile, DATABASE_PATH)
+        database = do_wait_screen("", parse_database_file, DATABASE_PATH)
 
-    doMainMenu(runtimeConstants)
+    do_main_menu(runtime_constants)
     os.kill(os.getpid(), signal.SIGTERM)

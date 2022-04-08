@@ -15,7 +15,7 @@ class FlagVal:
         if type(other) is FlagVal:
             return self.key == other.key and self.value == other.value
         elif type(other) is FlagDef:
-            return self.key == other.key and other.allowedValue(self.value)
+            return self.key == other.key and other.allowed_value(self.value)
         elif type(other) is str:
             return self.key == other
         else:
@@ -29,20 +29,20 @@ class FlagVal:
 
 
 class FlagDef:
-    def __init__(self, key, allowedValue=None):
+    def __init__(self, key, allowed_value=None):
         self.key = key
-        if type(allowedValue) is list:
-            self.allowedValue = lambda x: x in allowedValue
-        elif allowedValue is None:
-            self.allowedValue = lambda x: x is None
+        if type(allowed_value) is list:
+            self.allowed_value = lambda x: x in allowed_value
+        elif allowed_value is None:
+            self.allowed_value = lambda x: x is None
         else:
-            self.allowedValue = allowedValue
+            self.allowed_value = allowed_value
 
     def __eq__(self, other):
         if type(other) is FlagVal:
-            return self.key == other.key and self.allowedValue(other.value)
+            return self.key == other.key and self.allowed_value(other.value)
         elif type(other) is FlagDef:
-            return self.key == other.key and self.allowedValue == other.allowedValue
+            return self.key == other.key and self.allowed_value == other.allowed_value
         elif type(other) is str:
             return self.key == other
         else:
@@ -55,7 +55,7 @@ class FlagDef:
             return False
 
 
-def readFlags(argv):
+def read_flags(argv):
     flags = []
     skip = False
     for i, arg in enumerate(argv[1:]):
@@ -96,13 +96,13 @@ def readFlags(argv):
     return flags
 
 
-allowedFlags = [FlagDef(key="use-thumbnails", allowedValue=None)]
+allowedFlags = [FlagDef(key="use-thumbnails", allowed_value=None)]
 
 if __name__ == "__main__":
     import sys
 
     print(sys.argv)
-    flags = readFlags(sys.argv)
+    flags = read_flags(sys.argv)
     for flag in flags:
         if flag in allowedFlags:
             print(f"{flag.key} is an allowed flag")
