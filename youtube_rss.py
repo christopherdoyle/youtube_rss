@@ -28,17 +28,9 @@ import json
 from json import JSONEncoder
 from json import JSONDecoder
 import curses
-import socket
-try:
-    from tor_requests.tor_requests import getHttpResponseUsingSocks5
-    from tor_requests.tor_requests import generateNewSocks5Auth
-except:
-    print("you probably haven't run the command\ngit submodule update --init --recursive")
-    exit()
 import subprocess
 import os
 import sys
-import time
 import command_line_parser
 import threading
 import signal
@@ -250,28 +242,6 @@ class ChannelQueryObject:
     def __str__(self):
         return f"{self.title}  --  (channel ID {self.channelId})"
 
-# manages socks5 auths used for Tor stream isolation
-class CircuitManager:
-    def __init__(self, nCircuits = 15, ttl = 600):
-        self.ttl = ttl
-        self.nCircuits = 15
-        self.i = 0
-        self.expiryTime = 0
-        self.__lock = threading.Lock()
-
-    def initiateCircuitAuths(self):
-        self.circuitAuths=[generateNewSocks5Auth() for i in range(self.nCircuits)]
-
-    def getAuth(self):
-        # if ttl is over, reinitiate circuit auth list
-        with self.__lock:
-            if self.expiryTime < time.time():
-                self.initiateCircuitAuths()
-                self.expiryTime = time.time() + self.ttl
-            # circulate over the various auths so that you don't use the same circuit all the
-            # time
-            self.i += 1
-            return self.circuitAuths[self.i%self.nCircuits]
 
 class DatabaseEncoder(JSONEncoder):
     def default(self, o):
@@ -631,22 +601,12 @@ def unProxiedGetHttpContent(url, session=None, method = 'GET', postPayload = {})
             return session.post(url, postPayload)
 
 # use this function to get content (typically hypertext or xml) using HTTP from YouTube
-def getHttpContent(url, useTor, circuitManager=None, auth=None):
+def getHttpContent(url, circuitManager=None, auth=None):
     session = req.Session()
     session.headers['Accept-Language']='en-US'
     # This cookie lets us avoid the YouTube consent page
     session.cookies['CONSENT']='YES+'
-    if useTor:
-        if auth is not None:
-            socks5Username, socks5Password = auth
-            response = getHttpResponseUsingSocks5(url, session=session, 
-                    username=socks5Username, password=socks5Password)
-        else:
-            socks5Username, socks5Password = circuitManager.getAuth()
-            response = getHttpResponseUsingSocks5(url, session=session, 
-                    username=socks5Username, password=socks5Password)
-    else:
-        response = unProxiedGetHttpContent(url, session=session)
+    response = unProxiedGetHttpContent(url, session=session)
 
     return response
 
@@ -656,20 +616,20 @@ def getRssAddressFromChannelId(channelId):
 
 # use this function to get a list of query results from searching for a channel
 # results are of the type ChannelQueryObject
-def getChannelQueryResults(query, useTor=False, circuitManager=None):
+def getChannelQueryResults(query, circuitManager=None):
     url = 'https://youtube.com/results?search_query=' + urllib.parse.quote(query) + \
             '&sp=EgIQAg%253D%253D'
-    htmlContent = getHttpContent(url, useTor=useTor, circuitManager=circuitManager).text
+    htmlContent = getHttpContent(url, circuitManager=circuitManager).text
     parser = ChannelQueryParser()
     parser.feed(htmlContent)
     return parser.resultList
 
 # use this function to get a list of query results from searching for a video
 # results are of the type VideoQueryObject
-def getVideoQueryResults(query, runtimeConstants, useTor=False, circuitManager=None):
+def getVideoQueryResults(query, runtimeConstants, circuitManager=None):
     url = 'https://youtube.com/results?search_query=' + urllib.parse.quote(query) + \
             '&sp=EgIQAQ%253D%253D'
-    htmlContent = getHttpContent(url, useTor=useTor, circuitManager=circuitManager).text
+    htmlContent = getHttpContent(url, circuitManager=circuitManager).text
     parser = VideoQueryParser()
     parser.feed(htmlContent)
     if USE_THUMBNAILS:
@@ -678,7 +638,7 @@ def getVideoQueryResults(query, runtimeConstants, useTor=False, circuitManager=N
         os.mkdir(THUMBNAIL_SEARCH_DIR)
         process = Process(target=getSearchThumbnails, args=[parser.resultList, 
             runtimeConstants], 
-            kwargs = {'useTor':useTor, 'circuitManager':circuitManager})
+            kwargs = {'circuitManager':circuitManager})
         try:
             process.start()
             process.join()
@@ -690,9 +650,9 @@ def getVideoQueryResults(query, runtimeConstants, useTor=False, circuitManager=N
     return parser.resultList
 
 # use this function to get rss entries from channel id
-def getRssEntriesFromChannelId(channelId, useTor=False, circuitManager=None):
+def getRssEntriesFromChannelId(channelId, circuitManager=None):
     rssAddress = getRssAddressFromChannelId(channelId)
-    rssContent = getHttpContent(rssAddress, useTor, circuitManager=circuitManager).text
+    rssContent = getHttpContent(rssAddress, circuitManager=circuitManager).text
     entries = feedparser.parse(rssContent)['entries']
     return entries
 
@@ -706,14 +666,14 @@ def initiateYouTubeRssDatabase():
 
 # use this function to add a subscription to the database
 def addSubscriptionToDatabase(channelId, runtimeConstants, channelTitle, refresh=False,
-        useTor=False, circuitManager=None):
+        circuitManager=None):
     database = parseDatabaseFile(DATABASE_PATH)
     database['feeds'][channelId] = []
     database['id to title'][channelId] = channelTitle
     database['title to id'][channelTitle] = channelId
     outputDatabaseToFile(database, DATABASE_PATH)
     if refresh:
-        refreshSubscriptionsByChannelId( [channelId], runtimeConstants, useTor=useTor, 
+        refreshSubscriptionsByChannelId( [channelId], runtimeConstants,
                 circuitManager=circuitManager)
 
 def deleteThumbnailsByChannelTitle(database, channelTitle):
@@ -751,11 +711,11 @@ def removeSubscriptionFromDatabaseByChannelId(database, channelId):
 
 # use this function to retrieve new RSS entries for a subscription and add them to
 # a database
-def refreshSubscriptionsByChannelId(channelIdList, runtimeConstants, useTor=False, 
+def refreshSubscriptionsByChannelId(channelIdList, runtimeConstants,
         circuitManager=None):
     process = Process(target = refreshSubscriptionsByChannelIdProcess, 
             args = [channelIdList, runtimeConstants], 
-            kwargs = {'useTor':useTor, 'circuitManager':circuitManager})
+            kwargs = {'circuitManager':circuitManager})
     try:
         process.start()
         process.join()
@@ -765,26 +725,26 @@ def refreshSubscriptionsByChannelId(channelIdList, runtimeConstants, useTor=Fals
     if process.exitcode != 0:
         raise ProcessError
 
-def refreshSubscriptionsByChannelIdProcess(channelIdList, runtimeConstants, useTor=False, 
+def refreshSubscriptionsByChannelIdProcess(channelIdList, runtimeConstants,
         circuitManager=None):
     database = parseDatabaseFile(DATABASE_PATH)
     localFeeds = database['feeds']
     threads = []
     for channelId in channelIdList:
         localFeed = localFeeds[channelId]
-        thread = ErrorCatchingThread(refreshSubscriptionByChannelId, channelId, localFeed, useTor=useTor,
+        thread = ErrorCatchingThread(refreshSubscriptionByChannelId, channelId, localFeed,
                 circuitManager=circuitManager)
         threads.append(thread)
         thread.start()
     for thread in threads:
         thread.join()
     if runtimeConstants['USE_THUMBNAILS']:
-        getThumbnailsForAllSubscriptions(channelIdList, database, useTor, circuitManager=circuitManager)
+        getThumbnailsForAllSubscriptions(channelIdList, database, circuitManager=circuitManager)
     outputDatabaseToFile(database, runtimeConstants['DATABASE_PATH'])
 
-def refreshSubscriptionByChannelId(channelId, localFeed, useTor=False,
+def refreshSubscriptionByChannelId(channelId, localFeed,
         circuitManager=None):
-    remoteFeed = getRssEntriesFromChannelId(channelId, useTor=useTor, 
+    remoteFeed = getRssEntriesFromChannelId(channelId,
             circuitManager=circuitManager)
     if remoteFeed is not None:
         remoteFeed.reverse()
@@ -807,16 +767,9 @@ def refreshSubscriptionByChannelId(channelId, localFeed, useTor=False,
 
 
 # use this function to open a YouTube video url in mpv
-def openUrlInMpv(url, useTor=False, maxResolution=1080, circuitManager = None):
+def openUrlInMpv(url,maxResolution=1080, circuitManager = None):
     try:
         command = []
-        if useTor:
-            auth = circuitManager.getAuth()
-            command.append('torsocks')
-            command.append('-u')
-            command.append(auth[0])
-            command.append('-p')
-            command.append(auth[1])
         command += ['mpv', \
                 f'--ytdl-format=bestvideo[height=?{maxResolution}]+bestaudio/best']
         command.append(url)
@@ -879,20 +832,19 @@ def doMarkChannelAsRead(database, channelId):
 
 # this is the application level flow entered when the user has chosen to search for a
 # video
-def doInteractiveSearchForVideo(runtimeConstants, useTor=False, circuitManager=None):
+def doInteractiveSearchForVideo(runtimeConstants, circuitManager=None):
     query = doGetUserInput("Search for video: ")
     querying = True
     while querying:
         try:
             resultList = doWaitScreen("Getting video results...", getVideoQueryResults,
-                    query, runtimeConstants, useTor=useTor, circuitManager=circuitManager)
+                    query, runtimeConstants, circuitManager=circuitManager)
             if resultList:
                 menuOptions = [
                     MethodMenuDecision(
                         VideoQueryObjectDescriber(result),
                         playVideo,
                         result.url,
-                        useTor=useTor,
                         circuitManager=circuitManager
                     ) for result in resultList
                 ]
@@ -908,7 +860,7 @@ def doInteractiveSearchForVideo(runtimeConstants, useTor=False, circuitManager=N
     if os.path.isdir(THUMBNAIL_SEARCH_DIR):
         shutil.rmtree(THUMBNAIL_SEARCH_DIR)
 
-def getThumbnailsForAllSubscriptions(channelIdList, database, useTor=False, circuitManager = None):
+def getThumbnailsForAllSubscriptions(channelIdList, database, circuitManager = None):
     feeds = database['feeds']
     threads = []
     for channelId in channelIdList:
@@ -917,26 +869,26 @@ def getThumbnailsForAllSubscriptions(channelIdList, database, useTor=False, circ
         else:
             auth = None
         feed = feeds[channelId]
-        thread = ErrorCatchingThread(getThumbnailsForFeed, feed, useTor=useTor, auth=auth)
+        thread = ErrorCatchingThread(getThumbnailsForFeed, feed, auth=auth)
         threads.append(thread)
         thread.start()
     for thread in threads:
         thread.join()
 
 
-def getThumbnailsForFeed(feed, useTor=False, auth = None):
+def getThumbnailsForFeed(feed, auth = None):
     for entry in feed:
         if 'thumbnail file' in entry:
             continue
         videoId = entry['id'].split(':')[-1]
         thumbnailFileName = '/'.join([THUMBNAIL_DIR, videoId + 
                 '.jpg'])
-        thumbnailContent = getHttpContent(entry['thumbnail'], useTor=useTor,
+        thumbnailContent = getHttpContent(entry['thumbnail'],
                 auth = auth)
         entry['thumbnail file'] = thumbnailFileName
         open(thumbnailFileName, 'wb').write(thumbnailContent.content)
 
-def getSearchThumbnails(resultList, runtimeConstants, useTor = False, circuitManager = None):
+def getSearchThumbnails(resultList, runtimeConstants, circuitManager = None):
     if circuitManager is not None:
         auth = circuitManager.getAuth()
     else:
@@ -944,30 +896,30 @@ def getSearchThumbnails(resultList, runtimeConstants, useTor = False, circuitMan
     threads = []
     for result in resultList:
         thread = ErrorCatchingThread(getSearchThumbnailFromSearchResult, result, 
-                runtimeConstants, useTor=useTor, auth= auth)
+                runtimeConstants, auth= auth)
         threads.append(thread)
         thread.start()
     for thread in threads:
         thread.join()
 
-def getSearchThumbnailFromSearchResult(result, runtimeConstants, useTor=False, auth=None):
+def getSearchThumbnailFromSearchResult(result, runtimeConstants, auth=None):
     videoId = result.videoId.split(':')[-1]
     thumbnailFileName = '/'.join([runtimeConstants['THUMBNAIL_SEARCH_DIR'], videoId +
             '.jpg'])
-    thumbnailContent = getHttpContent(result.thumbnail, useTor=useTor,
+    thumbnailContent = getHttpContent(result.thumbnail,
             auth = auth)
     result.thumbnailFile = thumbnailFileName
     open(thumbnailFileName, 'wb').write(thumbnailContent.content)
 
 # this is the application level flow entered when the user has chosen to subscribe to a
 # new channel
-def doInteractiveChannelSubscribe(runtimeConstants, useTor=False, circuitManager=None):
+def doInteractiveChannelSubscribe(runtimeConstants, circuitManager=None):
     query = doGetUserInput("Enter channel to search for: ")
     querying = True
     while querying:
         try:
             resultList = doWaitScreen("Getting channel results...", 
-                    getChannelQueryResults, query, useTor=useTor, 
+                    getChannelQueryResults, query,
                     circuitManager=circuitManager)
             if resultList:
                 menuOptions = [
@@ -975,7 +927,6 @@ def doInteractiveChannelSubscribe(runtimeConstants, useTor=False, circuitManager
                         str(result),
                         doChannelSubscribe,
                         result=result,
-                        useTor=useTor,
                         circuitManager=circuitManager,
                         runtimeConstants=runtimeConstants
                     ) for result in resultList
@@ -993,7 +944,7 @@ def doInteractiveChannelSubscribe(runtimeConstants, useTor=False, circuitManager
 
 # this is the application level flow entered when the user has chosen a channel that it
 # wants to subscribe to
-def doChannelSubscribe(result, useTor, circuitManager, runtimeConstants):
+def doChannelSubscribe(result, circuitManager, runtimeConstants):
     database = doWaitScreen('', parseDatabaseFile, DATABASE_PATH)
     refreshing = True
     if result.channelId in database['feeds']:
@@ -1003,7 +954,7 @@ def doChannelSubscribe(result, useTor, circuitManager, runtimeConstants):
         try:
             doWaitScreen(f"getting data from feed for {result.title}...",
                     addSubscriptionToDatabase, result.channelId, runtimeConstants,
-                    result.title, refresh=True, useTor=useTor,
+                    result.title, refresh=True,
                     circuitManager=circuitManager)
             refreshing = False
         except req.exceptions.ConnectionError:
@@ -1043,7 +994,7 @@ def doChannelUnsubscribe(channelTitle):
 
 # this is the application level flow entered when the user has chosen to browse
 # its current subscriptions
-def doInteractiveBrowseSubscriptions(useTor, circuitManager):
+def doInteractiveBrowseSubscriptions(circuitManager):
     database = doWaitScreen('', parseDatabaseFile, DATABASE_PATH)
     menuOptions = [
         MethodMenuDecision(
@@ -1053,7 +1004,6 @@ def doInteractiveBrowseSubscriptions(useTor, circuitManager):
             ), doSelectVideoFromSubscription,
             database,
             channelTitle,
-            useTor,
             circuitManager
         ) for channelTitle in database['title to id']
     ]
@@ -1077,7 +1027,7 @@ def doInteractiveBrowseSubscriptions(useTor, circuitManager):
 # this is the application level flow entered when the user has chosen a channel while
 # browsing its current subscriptions;
 # the user now gets to select a video from the channel to watch
-def doSelectVideoFromSubscription(database, channelTitle, useTor, circuitManager):
+def doSelectVideoFromSubscription(database, channelTitle, circuitManager):
     channelId = database['title to id'][channelTitle]
     videos = database['feeds'][channelId]
     menuOptions = [
@@ -1086,7 +1036,6 @@ def doSelectVideoFromSubscription(database, channelTitle, useTor, circuitManager
             doPlayVideoFromSubscription,
             database,
             video,
-            useTor,
             circuitManager
         ) for video in videos
     ]
@@ -1104,21 +1053,21 @@ def doSelectVideoFromSubscription(database, channelTitle, useTor, circuitManager
 
 # this is the application level flow entered when the user has selected a video to watch
 # while browsing its current subscriptions
-def doPlayVideoFromSubscription(database, video, useTor, circuitManager):
-    result = playVideo(video['link'], useTor, circuitManager = circuitManager)
+def doPlayVideoFromSubscription(database, video, circuitManager):
+    result = playVideo(video['link'], circuitManager = circuitManager)
     if not video['seen']:
         video['seen'] = result
         outputDatabaseToFile(database, DATABASE_PATH)
 
 # this is the application level flow entered when the user is watching any video from
 # YouTube
-def playVideo(videoUrl, useTor=False, circuitManager = None):
+def playVideo(videoUrl, circuitManager = None):
     resolutionMenuList = [1080, 720, 480, 240]
     maxResolution = doSelectionQuery("Which maximum resolution do you want to use?",
             resolutionMenuList)
     result = False
     while not result:
-        result = doWaitScreen("playing video...", openUrlInMpv, videoUrl, useTor=useTor,
+        result = doWaitScreen("playing video...", openUrlInMpv, videoUrl,
                 maxResolution=maxResolution, circuitManager = circuitManager)
         if result or not doYesNoQuery(f"Something went wrong when playing the " + \
                 "video. Try again?"):
@@ -1127,80 +1076,40 @@ def playVideo(videoUrl, useTor=False, circuitManager = None):
 
 # this is the application level flow entered when the user has chosen to refresh its
 # subscriptions
-def doRefreshSubscriptions(runtimeConstants ,useTor=False, circuitManager=None):
+def doRefreshSubscriptions(runtimeConstants ,circuitManager=None):
     database = doWaitScreen('', parseDatabaseFile, DATABASE_PATH)
     channelIdList = list(database['id to title'])
     refreshing = True
     while refreshing:
         try:
             doWaitScreen("refreshing subscriptions...", refreshSubscriptionsByChannelId,
-                    channelIdList, runtimeConstants, useTor=useTor, circuitManager=circuitManager)
+                    channelIdList, runtimeConstants, circuitManager=circuitManager)
             refreshing = False
         except ProcessError:
             if not doYesNoQuery("Something went wrong. Try again?"):
                 refreshing = False
 
-def doStartupMenu(runtimeConstants):
-    menuOptions = [
-        MethodMenuDecision(
-            "Yes",
-            doStartupWithTor,
-            runtimeConstants
-        ), MethodMenuDecision(
-            "No",
-            doMainMenu,
-            runtimeConstants
-        )
-    ]
-    doMethodMenu("Do you want to use tor?", menuOptions, showItemNumber=False)
 
-def doStartupWithTor(runtimeConstants):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        result = sock.connect_ex(('127.0.0.1',9050))
-    if result != 0:
-        menuOptions = [
-            MethodMenuDecision(
-                "Yes",
-                doMainMenu,
-                runtimeConstants
-            ), MethodMenuDecision(
-                "No",
-                doNotifyAndReturnFromMenu,
-                "Can't find Tor daemon. Exiting program."
-            )
-        ]
-        doMethodMenu("Tor daemon not found on port 9050! " + \
-                "Continue without tor?", menuOptions, showItemNumber=False)
-    else:
-        doMainMenu(runtimeConstants, useTor=True, circuitManager=CircuitManager())
-    return ReturnFromMenu
-
-
-
-def doMainMenu(runtimeConstants, useTor=False, circuitManager=None):
+def doMainMenu(runtimeConstants, circuitManager=None):
     menuOptions =   [
         MethodMenuDecision( 
             "Search for video",
             doInteractiveSearchForVideo,
             runtimeConstants,
-            useTor=useTor,
             circuitManager=circuitManager
         ), MethodMenuDecision( 
             "Refresh subscriptions",
             doRefreshSubscriptions,
             runtimeConstants,
-            useTor=useTor,
             circuitManager=circuitManager
         ), MethodMenuDecision( 
             "Browse subscriptions",
             doInteractiveBrowseSubscriptions,
-            useTor = useTor,
             circuitManager = circuitManager
         ), MethodMenuDecision( 
             "Subscribe to new channel",
             doInteractiveChannelSubscribe,
             runtimeConstants,
-            useTor=useTor,
             circuitManager=circuitManager
         ), MethodMenuDecision( 
             "Unsubscribe from channel",
@@ -1287,5 +1196,5 @@ if __name__ == '__main__':
     else:
         database = doWaitScreen('', parseDatabaseFile, DATABASE_PATH)
 
-    doStartupMenu(runtimeConstants)
+    doMainMenu(runtimeConstants)
     os.kill(os.getpid(), signal.SIGTERM)
