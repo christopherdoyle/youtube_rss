@@ -2,6 +2,7 @@
 
 import curses
 import json
+import logging
 import os
 import re
 import shutil
@@ -32,6 +33,8 @@ except ImportError:
 # constants #
 #############
 
+logger = logging.getLogger(__name__)
+
 
 class Config:
     HOME = Path(os.environ.get("HOME"))
@@ -39,7 +42,7 @@ class Config:
     THUMBNAIL_DIR = YOUTUBE_RSS_DIR / "thumbnails"
     THUMBNAIL_SEARCH_DIR = THUMBNAIL_DIR / "search"
     DATABASE_PATH = YOUTUBE_RSS_DIR / "database"
-    LOG_PATH = YOUTUBE_RSS_DIR / "log"
+    LOG_PATH = YOUTUBE_RSS_DIR / "run.log"
 
     HIGHLIGHTED = 1
     NOT_HIGHLIGHTED = 2
@@ -72,10 +75,12 @@ class ErrorCatchingThread(threading.Thread):
         self.exc = None
         try:
             self.function(*self.args, **self.kwargs)
-        except SystemExit:
-            raise SystemExit
-        except Exception as exc:
-            self.exc = exc
+        except SystemExit as e:
+            logger.error(e)
+            raise e
+        except Exception as e:
+            logger.error(e)
+            self.exc = e
 
     def join(self, timeout: Optional[float] = None) -> None:
         try:
@@ -83,7 +88,9 @@ class ErrorCatchingThread(threading.Thread):
             if self.exc is not None:
                 raise self.exc
         except KeyboardInterrupt:
-            os.kill(os.getpid(), signal.SIGTERM)
+            pid = os.getpid()
+            logger.error("User interrupt detected, killing self, PID = %d", pid)
+            os.kill(pid, signal.SIGTERM)
 
     def get_thread_id(self):
         if hasattr(self, "_thread_id"):
@@ -772,6 +779,7 @@ def get_video_query_results(query, circuit_manager=None):
             process.start()
             process.join()
         except Exception as e:
+            logger.error(e)
             process.kill()
             raise e
         if process.exitcode != 0:
@@ -859,6 +867,7 @@ def refresh_subscriptions_by_channel_id(channel_id_list, circuit_manager=None):
         process.start()
         process.join()
     except Exception as e:
+        logger.error(e)
         process.kill()
         raise e
     if process.exitcode != 0:
@@ -931,6 +940,7 @@ def open_url_in_mpv(url, max_resolution=1080, circuit_manager=None):
         mpv_process.wait()
         result = mpv_process.poll()
     except KeyboardInterrupt:
+        logger.error("User interrupt detected, exiting MPV process")
         if mpv_process is not None:
             mpv_process.kill()
             mpv_process.wait()
@@ -1016,7 +1026,8 @@ def do_interactive_search_for_video(circuit_manager=None):
             else:
                 do_notify("no results found")
                 querying = False
-        except ProcessError:
+        except ProcessError as e:
+            logger.error(e)
             if not do_yes_no_query("Something went wrong. Try again?"):
                 querying = False
 
@@ -1114,7 +1125,8 @@ def do_interactive_channel_subscribe(circuit_manager=None):
             else:
                 if not do_yes_no_query("No results found. Try again?"):
                     querying = False
-        except req.exceptions.ConnectionError:
+        except req.exceptions.ConnectionError as e:
+            logger.error(e)
             if not do_yes_no_query(
                 "Something went wrong with the connection. Try again?"
             ):
@@ -1140,7 +1152,8 @@ def do_channel_subscribe(result, circuit_manager):
                 circuit_manager=circuit_manager,
             )
             refreshing = False
-        except req.exceptions.ConnectionError:
+        except req.exceptions.ConnectionError as e:
+            logger.error(e)
             if not do_yes_no_query(
                 "Something went wrong with the " + "connection. Try again?"
             ):
@@ -1282,7 +1295,8 @@ def do_refresh_subscriptions(circuit_manager=None):
                 circuit_manager=circuit_manager,
             )
             refreshing = False
-        except ProcessError:
+        except ProcessError as e:
+            logger.error(e)
             if not do_yes_no_query("Something went wrong. Try again?"):
                 refreshing = False
 
@@ -1337,7 +1351,6 @@ def do_method_menu(query, menu_options, show_item_number=True, adhoc_keys=None):
                 result = method_menu_decision.execute_decision()
             except KeyboardInterrupt:
                 result = None
-                pass
             if result is ReturnFromMenu:
                 return
     except KeyboardInterrupt:
@@ -1356,6 +1369,12 @@ def do_return_from_menu():
 
 
 def main():
+    logger.level = logging.DEBUG
+    handler = logging.FileHandler(CONFIG.LOG_PATH)
+    handler.level = logging.DEBUG
+    logger.addHandler(handler)
+    logger.info("Program start")
+
     flags = command_line_parser.read_flags(sys.argv)
     for flag in flags:
         if flag not in command_line_parser.allowedFlags:
@@ -1374,12 +1393,14 @@ def main():
     CONFIG.THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
 
     if not CONFIG.DATABASE_PATH.is_file():
+        logger.info("Initializing new database")
         database = initiate_youtube_rss_database()
         do_wait_screen("", output_database_to_file, database, CONFIG.DATABASE_PATH)
     else:
         database = do_wait_screen("", parse_database_file, CONFIG.DATABASE_PATH)
 
     do_main_menu()
+    logger.info("Program end")
     os.kill(os.getpid(), signal.SIGTERM)
 
 
