@@ -9,8 +9,9 @@ except ImportError:
     ueberzug = None
 
 
-# indicates that the provided query style is not supported
 class UnknownQueryStyle(Exception):
+    """Indicates that the provided query style is not supported."""
+
     pass
 
 
@@ -20,8 +21,9 @@ class InstantiateIndicatorClassError(Exception):
         super().__init__(message)
 
 
-# Parent to all indicator classes
 class IndicatorClass(ABC):
+    """Parent to all indicator classes."""
+
     pass
 
 
@@ -33,42 +35,47 @@ class NoCanvas(IndicatorClass):
         pass
 
 
-# returned from menu method to indicate that application flow should step
-# closer to the root menu
 class ReturnFromMenu(IndicatorClass):
+    """Returned from menu method to indicate that application flow should step
+    closer to the root menu.
+    """
+
     pass
 
 
-# indicates whether selection query should return by index, item or both
 class QueryStyle(IndicatorClass):
+    """Indicates whether selection query should return by index, item or both."""
+
     pass
 
 
-# indicates that selection query should return by index
 class IndexQuery(QueryStyle):
+    """Indicates that selection query should return by index."""
+
     pass
 
 
-# indicates that selection query should return by item
 class ItemQuery(QueryStyle):
+    """Indicates that selection query should return by item."""
+
     pass
 
 
-# indicates that selection query should return by both item and index
 class CombinedQuery(QueryStyle):
+    """Indicates that selection query should return by both item and index."""
+
     pass
 
 
-# This function displays a message while the user waits for a function to execute
-def do_wait_screen(message, wait_function, *args, **kwargs):
-    return curses.wrapper(
-        do_wait_screen_ncurses, message, wait_function, *args, **kwargs
-    )
+def wait_screen(message, wait_function, *args, **kwargs):
+    """Display a message while the user waits for a function to execute."""
+    return curses.wrapper(_wait_screen_ncurses, message, wait_function, *args, **kwargs)
 
 
-# This function is where the Ncurses level of do_wait_screen starts.
-# It should never be called directly, but always through do_wait_screen!
-def do_wait_screen_ncurses(stdscr, message, wait_function, *args, **kwargs):
+def _wait_screen_ncurses(stdscr, message, wait_function, *args, **kwargs):
+    """Ncurses level of do_wait_screen starts. It should never be called
+    directly, but always through do_wait_screen.
+    """
     curses.curs_set(0)
     curses.init_pair(CONFIG.HIGHLIGHTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
     curses.init_pair(CONFIG.NOT_HIGHLIGHTED, curses.COLOR_WHITE, curses.COLOR_BLACK)
@@ -76,22 +83,22 @@ def do_wait_screen_ncurses(stdscr, message, wait_function, *args, **kwargs):
     return wait_function(*args, **kwargs)
 
 
-# This Function gets a yes/no response to some query from the user
-def do_yes_no_query(query):
-    return curses.wrapper(do_yes_no_query_ncurses, query)
+def yes_no_query(query):
+    """Get a yes/no response to some query from the user."""
+    return curses.wrapper(_yes_no_query_ncurses, query)
 
 
-# This function is where the Ncurses level of do_yes_no_query starts.
-# It should never be called directly, but always through do_yes_no_query!
-def do_yes_no_query_ncurses(stdscr, query):
+def _yes_no_query_ncurses(stdscr, query):
+    """Ncurses level of do_yes_no_query, it should never be called directly,
+    but always through do_yes_no_query.
+    """
     return (
-        do_selection_query_ncurses(stdscr, query, ["yes", "no"], show_item_number=False)
+        _select_query_ncurses(stdscr, query, ["yes", "no"], show_item_number=False)
         == "yes"
     )
 
 
-# This function lets the user choose an object from a list
-def do_selection_query(
+def select_query(
     query,
     options,
     query_style=ItemQuery,
@@ -99,8 +106,9 @@ def do_selection_query(
     show_item_number=True,
     adhoc_keys=None,
 ):
+    """Display a list to the user to choose."""
     return curses.wrapper(
-        do_selection_query_ncurses,
+        _select_query_ncurses,
         query,
         options,
         query_style=query_style,
@@ -110,9 +118,7 @@ def do_selection_query(
     )
 
 
-# This function is where the Ncurses level of do_selection_query starts.
-# It should never be called directly, but always through do_selection_query!
-def do_selection_query_ncurses(
+def _select_query_ncurses(
     stdscr,
     query,
     options,
@@ -121,6 +127,9 @@ def do_selection_query_ncurses(
     show_item_number=True,
     adhoc_keys=None,
 ):
+    """Ncurses level of do_selection, it should never be called directory but
+    through do_selection_query.
+    """
     curses.curs_set(0)
     curses.init_pair(CONFIG.HIGHLIGHTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
     curses.init_pair(CONFIG.NOT_HIGHLIGHTED, curses.COLOR_WHITE, curses.COLOR_BLACK)
@@ -188,22 +197,20 @@ def do_selection_query_ncurses(
                     raise UnknownQueryStyle
 
 
-# This function displays a piece of information to the user until they confirm having
-# seen it
-def do_notify(message):
-    do_selection_query(message, ["ok"], show_item_number=False)
+def notify(message):
+    """Notify the user until they confirm having seen it."""
+    select_query(message, ["ok"], show_item_number=False)
 
 
-# This function gets a string of written input from the user
-def do_get_user_input(query, max_input_length=40):
-    return curses.wrapper(
-        do_get_user_input_ncurses, query, max_input_length=max_input_length
-    )
+def user_input(query, max_input_length=40):
+    """Get a string of written input from the user."""
+    return curses.wrapper(_user_input_ncurses, query, max_input_length=max_input_length)
 
 
-# This function is where the Ncurses level of do_get_user_input starts.
-# It should never be called directly, but always through do_get_user_input!
-def do_get_user_input_ncurses(stdscr, query, max_input_length=40):
+def _user_input_ncurses(stdscr, query, max_input_length=40):
+    """Ncurses level of do_get_user_input, it should never be called directly
+    but always through do_get_user_input.
+    """
     curses.curs_set(0)
     curses.init_pair(CONFIG.HIGHLIGHTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
     curses.init_pair(CONFIG.NOT_HIGHLIGHTED, curses.COLOR_WHITE, curses.COLOR_BLACK)
@@ -248,10 +255,6 @@ def do_get_user_input_ncurses(stdscr, query, max_input_length=40):
             cursor_position = min(max_input_length, cursor_position + 1)
 
 
-# This function is used to visually represent a query and a number of menu items to the
-# user, by using nCurses. It is used for all text printing in the program (even where
-# no application level menu is presented, i.e by simply not providing a query and no
-# menu objects)
 def print_menu(
     query,
     menu,
@@ -262,6 +265,11 @@ def print_menu(
     jump_num_str="",
     canvas=None,
 ):
+    """Visually represent a query and a number of menu items to the user, by
+    using nCurses. It is used for all text printing in the program (even where
+    no application level menu is presented, i.e. by simply not providing a query
+    and no menu objects).
+    """
     if canvas is None:
         canvas = NoCanvas()
     stdscr.clear()

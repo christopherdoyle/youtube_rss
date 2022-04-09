@@ -512,11 +512,11 @@ def do_mark_channel_as_read(database, channel_id):
 # this is the application level flow entered when the user has chosen to search for a
 # video
 def do_interactive_search_for_video(circuit_manager=None):
-    query = tui.do_get_user_input("Search for video: ")
+    query = tui.user_input("Search for video: ")
     querying = True
     while querying:
         try:
-            result_list = tui.do_wait_screen(
+            result_list = tui.wait_screen(
                 "Getting video results...",
                 get_video_query_results,
                 query,
@@ -538,11 +538,11 @@ def do_interactive_search_for_video(circuit_manager=None):
                 do_method_menu(f"Search results for '{query}':", menu_options)
                 querying = False
             else:
-                tui.do_notify("no results found")
+                tui.notify("no results found")
                 querying = False
         except ProcessError as e:
             logger.error(e)
-            if not tui.do_yes_no_query("Something went wrong. Try again?"):
+            if not tui.yes_no_query("Something went wrong. Try again?"):
                 querying = False
 
     if CONFIG.THUMBNAIL_SEARCH_DIR.is_dir():
@@ -607,11 +607,11 @@ def get_search_thumbnail_from_search_result(result, auth=None):
 # this is the application level flow entered when the user has chosen to subscribe to a
 # new channel
 def do_interactive_channel_subscribe(circuit_manager=None):
-    query = tui.do_get_user_input("Enter channel to search for: ")
+    query = tui.user_input("Enter channel to search for: ")
     querying = True
     while querying:
         try:
-            result_list = tui.do_wait_screen(
+            result_list = tui.wait_screen(
                 "Getting channel results...",
                 get_channel_query_results,
                 query,
@@ -637,11 +637,11 @@ def do_interactive_channel_subscribe(circuit_manager=None):
                 )
                 querying = False
             else:
-                if not tui.do_yes_no_query("No results found. Try again?"):
+                if not tui.yes_no_query("No results found. Try again?"):
                     querying = False
         except requests.exceptions.ConnectionError as e:
             logger.error(e)
-            if not tui.do_yes_no_query(
+            if not tui.yes_no_query(
                 "Something went wrong with the connection. Try again?"
             ):
                 querying = False
@@ -650,14 +650,14 @@ def do_interactive_channel_subscribe(circuit_manager=None):
 # this is the application level flow entered when the user has chosen a channel that it
 # wants to subscribe to
 def do_channel_subscribe(result, circuit_manager):
-    database = tui.do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
+    database = tui.wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
     refreshing = True
     if result.channel_id in database["feeds"]:
-        tui.do_notify("Already subscribed to this channel!")
+        tui.notify("Already subscribed to this channel!")
         return
     while refreshing:
         try:
-            tui.do_wait_screen(
+            tui.wait_screen(
                 f"getting data from feed for {result.title}...",
                 add_subscription_to_database,
                 result.channel_id,
@@ -668,7 +668,7 @@ def do_channel_subscribe(result, circuit_manager):
             refreshing = False
         except requests.exceptions.ConnectionError as e:
             logger.error(e)
-            if not tui.do_yes_no_query(
+            if not tui.yes_no_query(
                 "Something went wrong with the " + "connection. Try again?"
             ):
                 do_channel_unsubscribe(result.title)
@@ -680,9 +680,9 @@ def do_channel_subscribe(result, circuit_manager):
 # this is the application level flow entered when the user has chosen to unsubscribe to
 # a channel
 def do_interactive_channel_unsubscribe():
-    database = tui.do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
+    database = tui.wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
     if not database["title to id"]:
-        tui.do_notify("You are not subscribed to any channels")
+        tui.notify("You are not subscribed to any channels")
         return
     menu_options = [
         MethodMenuDecision(channel_title, do_channel_unsubscribe, channel_title)
@@ -695,7 +695,7 @@ def do_interactive_channel_unsubscribe():
 # this is the application level flow entered when the user has chosen a channel that it
 # wants to unsubscribe from
 def do_channel_unsubscribe(channel_title):
-    database = tui.do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
+    database = tui.wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
     if CONFIG.USE_THUMBNAILS:
         delete_thumbnails_by_channel_title(database, channel_title)
     remove_subscription_from_database_by_channel_title(database, channel_title)
@@ -706,7 +706,7 @@ def do_channel_unsubscribe(channel_title):
 # this is the application level flow entered when the user has chosen to browse
 # its current subscriptions
 def do_interactive_browse_subscriptions(circuit_manager):
-    database = tui.do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
+    database = tui.wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
     menu_options = [
         MethodMenuDecision(
             FeedDescriber(
@@ -726,7 +726,7 @@ def do_interactive_browse_subscriptions(circuit_manager):
     ]
 
     if not menu_options:
-        tui.do_notify("You are not subscribed to any channels")
+        tui.notify("You are not subscribed to any channels")
         return
 
     menu_options.insert(0, MethodMenuDecision("[Go back]", do_return_from_menu))
@@ -776,19 +776,19 @@ def do_play_video_from_subscription(database, video, circuit_manager):
 # YouTube
 def play_video(video_url, circuit_manager=None):
     resolution_menu_list = [1080, 720, 480, 240]
-    max_resolution = tui.do_selection_query(
+    max_resolution = tui.select_query(
         "Which maximum resolution do you want to use?", resolution_menu_list
     )
     result = False
     while not result:
-        result = tui.do_wait_screen(
+        result = tui.wait_screen(
             "playing video...",
             open_url_in_mpv,
             video_url,
             max_resolution=max_resolution,
             circuit_manager=circuit_manager,
         )
-        if result or not tui.do_yes_no_query(
+        if result or not tui.yes_no_query(
             "Something went wrong when playing the " + "video. Try again?"
         ):
             break
@@ -798,12 +798,12 @@ def play_video(video_url, circuit_manager=None):
 # this is the application level flow entered when the user has chosen to refresh its
 # subscriptions
 def do_refresh_subscriptions(circuit_manager=None):
-    database = tui.do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
+    database = tui.wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
     channel_id_list = list(database["id to title"])
     refreshing = True
     while refreshing:
         try:
-            tui.do_wait_screen(
+            tui.wait_screen(
                 "refreshing subscriptions...",
                 refresh_subscriptions_by_channel_id,
                 channel_id_list,
@@ -812,7 +812,7 @@ def do_refresh_subscriptions(circuit_manager=None):
             refreshing = False
         except ProcessError as e:
             logger.error(e)
-            if not tui.do_yes_no_query("Something went wrong. Try again?"):
+            if not tui.yes_no_query("Something went wrong. Try again?"):
                 refreshing = False
 
 
@@ -854,7 +854,7 @@ def do_method_menu(query, menu_options, show_item_number=True, adhoc_keys=None):
     index = 0
     try:
         while True:
-            method_menu_decision, index = tui.do_selection_query(
+            method_menu_decision, index = tui.select_query(
                 query,
                 menu_options,
                 initial_index=index,
@@ -910,9 +910,9 @@ def main():
     if not CONFIG.DATABASE_PATH.is_file():
         logger.info("Initializing new database")
         database = db.initialize_database()
-        tui.do_wait_screen("", database.to_json, CONFIG.DATABASE_PATH)
+        tui.wait_screen("", database.to_json, CONFIG.DATABASE_PATH)
     else:
-        tui.do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
+        tui.wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
 
     do_main_menu()
     logger.info("Program end")
