@@ -7,7 +7,11 @@ still want to be able to keep track of their favourite channels, etc.
 YouTube\_RSS manages subscriptions to channels using RSS, rather than YouTube's
 internal subscription system that requires a privacy violating Google account.
 
-It also (optionally) uses Tor to hide the IP address of the user.
+## Acknowledgement
+
+> SimonDaNinja/youtube_rss - a set of tools for supporting development of anonymous RSS-based YouTube client applications.
+> Copyright (C) 2021  Simon Liljestrand
+> Contact by email: simon@simonssoffa.xyz
 
 ## Dependencies
 
@@ -24,20 +28,12 @@ pysocks
 If you want to get thumbnails for videos, you will additionally need to install the
 module `ueberzug`, e.g. using pip.
 
-The project also uses [Tor-Requests](https://github.com/SimonDaNinja/tor_requests/tree/db191029791e12a73d02f6533f17371fea6aeed1)
-as a submodule, so make sure to run `git submodule update --init --recursive`
-before using YouTube\_RSS.
-
 The program also assumes that [mpv](https://github.com/mpv-player/mpv) is
 installed in the environment. In, for example, Ubuntu, this can be accomplished
 by running `sudo apt-get install mpv`. [youtube-dl](https://github.com/ytdl-org) also
 needs to be installed (I use the latest version on their [official website](https://youtube-dl.org/), and
 at the time of this writing, the version in the Ubuntu rebository seems too old to work
 the way this project uses it).
-
-For using Tor, YouTube\_RSS assumes that Tor is installed and currently running
-on port `9050` (which is the default for the Tor daemon anyway). It also requires that
-torsocks is installed.
 
 ## Disclaimer
 
