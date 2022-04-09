@@ -24,6 +24,7 @@ import curses
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -41,6 +42,11 @@ import requests as req
 
 import command_line_parser
 
+try:
+    import ueberzug.lib.v0 as ueberzug
+except ImportError:
+    ueberzug = None
+
 #############
 # constants #
 #############
@@ -56,6 +62,8 @@ HIGHLIGHTED = 1
 NOT_HIGHLIGHTED = 2
 
 ANY_INDEX = -1
+
+USE_THUMBNAILS = False
 
 ###########
 # classes #
@@ -1374,20 +1382,19 @@ def do_return_from_menu():
 # main section #
 ################
 
-if __name__ == "__main__":
+
+def main():
+    global USE_THUMBNAILS
+
     flags = command_line_parser.read_flags(sys.argv)
     for flag in flags:
         if flag not in command_line_parser.allowedFlags:
             raise command_line_parser.CommandLineParseError
 
-    USE_THUMBNAILS = False
     if "use-thumbnails" in flags:
         flag = flags[flags.index("use-thumbnails")]
         flag.treated = True
         USE_THUMBNAILS = True
-        import shutil
-
-        import ueberzug.lib.v0 as ueberzug
 
     for flag in flags:
         if not flag.treated:
@@ -1418,3 +1425,7 @@ if __name__ == "__main__":
 
     do_main_menu(runtime_constants)
     os.kill(os.getpid(), signal.SIGTERM)
+
+
+if __name__ == "__main__":
+    main()
