@@ -15,6 +15,7 @@ from abc import ABC
 from html.parser import HTMLParser
 from json import JSONDecoder, JSONEncoder
 from multiprocessing import Process, ProcessError
+from pathlib import Path
 from typing import Optional
 
 import feedparser
@@ -31,12 +32,12 @@ except ImportError:
 # constants #
 #############
 
-HOME = os.environ.get("HOME")
-YOUTUBE_RSS_DIR = "/".join([HOME, ".youtube_rss"])
-THUMBNAIL_DIR = "/".join([YOUTUBE_RSS_DIR, "thumbnails"])
-THUMBNAIL_SEARCH_DIR = "/".join([THUMBNAIL_DIR, "search"])
-DATABASE_PATH = "/".join([YOUTUBE_RSS_DIR, "database"])
-LOG_PATH = "/".join([YOUTUBE_RSS_DIR, "log"])
+HOME = Path(os.environ.get("HOME"))
+YOUTUBE_RSS_DIR = HOME / ".youtube_rss"
+THUMBNAIL_DIR = YOUTUBE_RSS_DIR / "thumbnails"
+THUMBNAIL_SEARCH_DIR = THUMBNAIL_DIR / "search"
+DATABASE_PATH = YOUTUBE_RSS_DIR / "database"
+LOG_PATH = YOUTUBE_RSS_DIR / "log"
 
 HIGHLIGHTED = 1
 NOT_HIGHLIGHTED = 2
@@ -332,9 +333,7 @@ class VideoQueryObjectDescriber:
         return self.video_query_object.title
 
     def get_thumbnail(self):
-        return "/".join(
-            [THUMBNAIL_SEARCH_DIR, self.video_query_object.video_id + ".jpg"]
-        )
+        return THUMBNAIL_SEARCH_DIR / self.video_query_object.video_id + ".jpg"
 
 
 class FeedDescriber:
@@ -757,9 +756,10 @@ def get_video_query_results(query, runtime_constants, circuit_manager=None):
     parser = VideoQueryParser()
     parser.feed(html_ceontent)
     if USE_THUMBNAILS:
-        if os.path.isdir(THUMBNAIL_SEARCH_DIR):
+        if THUMBNAIL_SEARCH_DIR.is_dir():
             shutil.rmtree(THUMBNAIL_SEARCH_DIR)
-        os.mkdir(THUMBNAIL_SEARCH_DIR)
+
+        THUMBNAIL_SEARCH_DIR.mkdir()
         process = Process(
             target=get_search_thumbnails,
             args=(parser.result_list, runtime_constants),
@@ -822,8 +822,7 @@ def delete_thumbnails_by_channel_id(database, channel_id):
         return
     feed = database["feeds"][channel_id]
     for entry in feed:
-        if os.path.isfile(entry["thumbnail file"]):
-            os.remove(entry["thumbnail file"])
+        Path(entry["thumbnail file"]).unlink(missing_ok=True)
 
 
 # use this function to remove a subscription from the database by channel title
@@ -852,7 +851,7 @@ def refresh_subscriptions_by_channel_id(
 ):
     process = Process(
         target=refresh_subscriptions_by_channel_id_process,
-        args=[channel_id_list, runtime_constants],
+        args=(channel_id_list, runtime_constants),
         kwargs={"circuit_manager": circuit_manager},
     )
     try:
@@ -962,8 +961,8 @@ def parse_database_file(filename):
 
 
 # use this function to write json representation of database to file
-def output_database_to_file(database, filename):
-    with open(filename, "w") as file_pointer:
+def output_database_to_file(database, filename: Path):
+    with filename.open("w") as file_pointer:
         return json.dump(database, file_pointer, indent=4, cls=DatabaseEncoder)
 
 
@@ -1045,10 +1044,10 @@ def get_thumbnails_for_feed(feed, auth=None):
         if "thumbnail file" in entry:
             continue
         video_id = entry["id"].split(":")[-1]
-        thumbnail_filename = "/".join([THUMBNAIL_DIR, video_id + ".jpg"])
+        thumbnail_filename = THUMBNAIL_DIR / video_id + ".jpg"
         thumbnail_content = get_http_content(entry["thumbnail"], auth=auth)
         entry["thumbnail file"] = thumbnail_filename
-        open(thumbnail_filename, "wb").write(thumbnail_content.content)
+        thumbnail_filename.write_bytes(thumbnail_content.content)
 
 
 def get_search_thumbnails(result_list, runtime_constants, circuit_manager=None):
@@ -1072,12 +1071,12 @@ def get_search_thumbnails(result_list, runtime_constants, circuit_manager=None):
 
 def get_search_thumbnail_from_search_result(result, runtime_constants, auth=None):
     video_id = result.video_id.split(":")[-1]
-    thumbnail_filename = "/".join(
-        [runtime_constants["THUMBNAIL_SEARCH_DIR"], video_id + ".jpg"]
+    thumbnail_filename: Path = (
+        runtime_constants["THUMBNAIL_SEARCH_DIR"] / video_id + ".jpg"
     )
     thumbnail_content = get_http_content(result.thumbnail, auth=auth)
     result.thumbnailFile = thumbnail_filename
-    open(thumbnail_filename, "wb").write(thumbnail_content.content)
+    thumbnail_filename.write_bytes(thumbnail_content.content)
 
 
 # this is the application level flow entered when the user has chosen to subscribe to a
@@ -1329,7 +1328,7 @@ def do_main_menu(runtime_constants, circuit_manager=None):
 # this is a function for managing menu hierarchies; once called, a menu presents
 # application flows available to the user. If called from a flow selected in a previous
 # method menu, the menu becomes a new branch one step further from the root menu
-def do_method_menu(query, menu_options, show_item_number=True, adhoc_keys=[]):
+def do_method_menu(query, menu_options, show_item_number=True, adhoc_keys=None):
     index = 0
     try:
         while True:
@@ -1339,7 +1338,7 @@ def do_method_menu(query, menu_options, show_item_number=True, adhoc_keys=[]):
                 initial_index=index,
                 query_style=CombinedQuery,
                 show_item_number=show_item_number,
-                adhoc_keys=adhoc_keys,
+                adhoc_keys=adhoc_keys or [],
             )
             try:
                 result = method_menu_decision.execute_decision()
@@ -1393,10 +1392,9 @@ def main():
         "ANY_INDEX": ANY_INDEX,
     }
 
-    if not os.path.isdir(YOUTUBE_RSS_DIR):
-        os.mkdir(YOUTUBE_RSS_DIR)
-    if not os.path.isdir(THUMBNAIL_DIR) and USE_THUMBNAILS:
-        os.mkdir(THUMBNAIL_DIR)
+    YOUTUBE_RSS_DIR.mkdir(parents=True, exist_ok=True)
+    THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
+
     if not os.path.isfile(DATABASE_PATH):
         database = initiate_youtube_rss_database()
         do_wait_screen("", output_database_to_file, database, DATABASE_PATH)
