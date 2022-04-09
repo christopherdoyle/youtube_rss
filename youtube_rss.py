@@ -1,7 +1,6 @@
 #! /usr/bin/env python3
 
 import curses
-import json
 import logging
 import os
 import re
@@ -9,20 +8,19 @@ import shutil
 import signal
 import subprocess
 import sys
-import threading
 import urllib
 import urllib.parse
 from abc import ABC
 from html.parser import HTMLParser
-from json import JSONDecoder, JSONEncoder
 from multiprocessing import Process, ProcessError
 from pathlib import Path
-from typing import Optional
 
 import feedparser
 import requests as req
 
 import command_line_parser
+import db
+import utils
 
 try:
     import ueberzug.lib.v0 as ueberzug
@@ -33,7 +31,7 @@ except ImportError:
 # constants #
 #############
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("youtube_rss")
 
 
 class Config:
@@ -57,48 +55,6 @@ CONFIG = Config()
 ###########
 # classes #
 ###########
-
-"""
-Thread classes
-"""
-
-
-class ErrorCatchingThread(threading.Thread):
-    def __init__(self, function, *args, **kwargs):
-        super().__init__()
-        self.function = function
-        self.args = args
-        self.kwargs = kwargs
-        self.exc = None
-
-    def run(self):
-        self.exc = None
-        try:
-            self.function(*self.args, **self.kwargs)
-        except SystemExit as e:
-            logger.error(e)
-            raise e
-        except Exception as e:
-            logger.error(e)
-            self.exc = e
-
-    def join(self, timeout: Optional[float] = None) -> None:
-        try:
-            super().join(timeout)
-            if self.exc is not None:
-                raise self.exc
-        except KeyboardInterrupt:
-            pid = os.getpid()
-            logger.error("User interrupt detected, killing self, PID = %d", pid)
-            os.kill(pid, signal.SIGTERM)
-
-    def get_thread_id(self):
-        if hasattr(self, "_thread_id"):
-            return self._thread_id
-        for thread_id, thread in threading._active.items():
-            if thread is self:
-                return thread_id
-
 
 """
 Parser classes
@@ -266,47 +222,6 @@ class ChannelQueryObject:
 
     def __str__(self):
         return f"{self.title}  --  (channel ID {self.channel_id})"
-
-
-class DatabaseEncoder(JSONEncoder):
-    def default(self, o):
-        return o.db
-
-
-class DatabaseDecoder(JSONDecoder):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, object_hook=self.object_hook)
-
-    def object_hook(self, dct):
-        if isinstance(dct, (dict, list)):
-            return Database(dct)
-        return dct
-
-
-class Database:
-    def __init__(self, db):
-        self.db = db
-        self.__lock = threading.Lock()
-
-    def __repr__(self):
-        return repr(self.db)
-
-    def __getitem__(self, item):
-        with self.__lock:
-            return self.db[item]
-
-    def __setitem__(self, item, value):
-        with self.__lock:
-            self.db[item] = value
-
-    def __iter__(self):
-        return iter(self.db)
-
-    def update(self, *args, **kwargs):
-        self.db.update(*args, **kwargs)
-
-    def pop(self, *args, **kwargs):
-        return self.db.pop(*args, **kwargs)
 
 
 # item of the sort provided in list to do_method_menu; it is provided a
@@ -795,25 +710,15 @@ def get_rss_entries_from_channel_id(channel_id, circuit_manager=None):
     return entries
 
 
-# use this function to initialize the database (dict format so it's easy to save
-# as json)
-def initiate_youtube_rss_database():
-    database = Database({})
-    database["feeds"] = Database({})
-    database["id to title"] = Database({})
-    database["title to id"] = Database({})
-    return database
-
-
 # use this function to add a subscription to the database
 def add_subscription_to_database(
     channel_id, channel_title, refresh=False, circuit_manager=None
 ):
-    database = parse_database_file(CONFIG.DATABASE_PATH)
+    database = db.Database.from_json(CONFIG.DATABASE_PATH)
     database["feeds"][channel_id] = []
     database["id to title"][channel_id] = channel_title
     database["title to id"][channel_title] = channel_id
-    output_database_to_file(database, CONFIG.DATABASE_PATH)
+    database.to_json(CONFIG.DATABASE_PATH)
     if refresh:
         refresh_subscriptions_by_channel_id(
             [channel_id], circuit_manager=circuit_manager
@@ -852,7 +757,7 @@ def remove_subscription_from_database_by_channel_id(database, channel_id):
     channel_title = database["id to title"].pop(channel_id)
     database["title to id"].pop(channel_title)
     database["feeds"].pop(channel_id)
-    output_database_to_file(database, CONFIG.DATABASE_PATH)
+    database.to_json(CONFIG.DATABASE_PATH)
 
 
 # use this function to retrieve new RSS entries for a subscription and add them to
@@ -875,12 +780,12 @@ def refresh_subscriptions_by_channel_id(channel_id_list, circuit_manager=None):
 
 
 def refresh_subscriptions_by_channel_id_process(channel_id_list, circuit_manager=None):
-    database = parse_database_file(CONFIG.DATABASE_PATH)
+    database = db.Database.from_json(CONFIG.DATABASE_PATH)
     local_feeds = database["feeds"]
     threads = []
     for channel_id in channel_id_list:
         local_feed = local_feeds[channel_id]
-        thread = ErrorCatchingThread(
+        thread = utils.ErrorCatchingThread(
             refresh_subscription_by_channel_id,
             channel_id,
             local_feed,
@@ -894,7 +799,8 @@ def refresh_subscriptions_by_channel_id_process(channel_id_list, circuit_manager
         get_thumbnails_for_all_subscriptions(
             channel_id_list, database, circuit_manager=circuit_manager
         )
-    output_database_to_file(database, CONFIG.DATABASE_PATH)
+
+    database.to_json(CONFIG.DATABASE_PATH)
 
 
 def refresh_subscription_by_channel_id(channel_id, local_feed, circuit_manager=None):
@@ -963,23 +869,6 @@ def get_relevant_dict_from_feed_parser_dict(feedparser_dict):
 
 
 """
-Functions for managing database persistence between user sessions
-"""
-
-
-# use this function to read database from json file
-def parse_database_file(filename):
-    with open(filename, "r") as file_pointer:
-        return json.load(file_pointer, cls=DatabaseDecoder)
-
-
-# use this function to write json representation of database to file
-def output_database_to_file(database, filename: Path):
-    with filename.open("w") as file_pointer:
-        return json.dump(database, file_pointer, indent=4, cls=DatabaseEncoder)
-
-
-"""
 Application control flow
 """
 
@@ -992,7 +881,7 @@ def do_mark_channel_as_read(database, channel_id):
             break
     for video in database["feeds"][channel_id]:
         video["seen"] = not all_are_already_marked_as_read
-    output_database_to_file(database, CONFIG.DATABASE_PATH)
+    database.to_json(CONFIG.DATABASE_PATH)
 
 
 # this is the application level flow entered when the user has chosen to search for a
@@ -1046,7 +935,7 @@ def get_thumbnails_for_all_subscriptions(
         else:
             auth = None
         feed = feeds[channel_id]
-        thread = ErrorCatchingThread(get_thumbnails_for_feed, feed, auth=auth)
+        thread = utils.ErrorCatchingThread(get_thumbnails_for_feed, feed, auth=auth)
         threads.append(thread)
         thread.start()
     for thread in threads:
@@ -1071,7 +960,7 @@ def get_search_thumbnails(result_list, circuit_manager=None):
         auth = None
     threads = []
     for result in result_list:
-        thread = ErrorCatchingThread(
+        thread = utils.ErrorCatchingThread(
             get_search_thumbnail_from_search_result,
             result,
             auth=auth,
@@ -1136,7 +1025,7 @@ def do_interactive_channel_subscribe(circuit_manager=None):
 # this is the application level flow entered when the user has chosen a channel that it
 # wants to subscribe to
 def do_channel_subscribe(result, circuit_manager):
-    database = do_wait_screen("", parse_database_file, CONFIG.DATABASE_PATH)
+    database = do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
     refreshing = True
     if result.channel_id in database["feeds"]:
         do_notify("Already subscribed to this channel!")
@@ -1165,7 +1054,7 @@ def do_channel_subscribe(result, circuit_manager):
 # this is the application level flow entered when the user has chosen to unsubscribe to
 # a channel
 def do_interactive_channel_unsubscribe():
-    database = do_wait_screen("", parse_database_file, CONFIG.DATABASE_PATH)
+    database = do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
     if not database["title to id"]:
         do_notify("You are not subscribed to any channels")
         return
@@ -1180,18 +1069,18 @@ def do_interactive_channel_unsubscribe():
 # this is the application level flow entered when the user has chosen a channel that it
 # wants to unsubscribe from
 def do_channel_unsubscribe(channel_title):
-    database = do_wait_screen("", parse_database_file, CONFIG.DATABASE_PATH)
+    database = do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
     if CONFIG.USE_THUMBNAILS:
         delete_thumbnails_by_channel_title(database, channel_title)
     remove_subscription_from_database_by_channel_title(database, channel_title)
-    output_database_to_file(database, CONFIG.DATABASE_PATH)
+    database.to_json(CONFIG.DATABASE_PATH)
     return ReturnFromMenu
 
 
 # this is the application level flow entered when the user has chosen to browse
 # its current subscriptions
 def do_interactive_browse_subscriptions(circuit_manager):
-    database = do_wait_screen("", parse_database_file, CONFIG.DATABASE_PATH)
+    database = do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
     menu_options = [
         MethodMenuDecision(
             FeedDescriber(
@@ -1240,12 +1129,12 @@ def do_select_video_from_subscription(database, channel_title, circuit_manager):
     ]
 
     adhoc_keys = [MarkEntryAsReadKey(video, i + 1) for i, video in enumerate(videos)]
-    output_database_to_file(database, CONFIG.DATABASE_PATH)
+    database.to_json(CONFIG.DATABASE_PATH)
     menu_options.insert(0, MethodMenuDecision("[Go back]", do_return_from_menu))
     do_method_menu(
         "Which video do you want to watch?", menu_options, adhoc_keys=adhoc_keys
     )
-    output_database_to_file(database, CONFIG.DATABASE_PATH)
+    database.to_json(CONFIG.DATABASE_PATH)
 
 
 # this is the application level flow entered when the user has selected a video to watch
@@ -1254,7 +1143,7 @@ def do_play_video_from_subscription(database, video, circuit_manager):
     result = play_video(video["link"], circuit_manager=circuit_manager)
     if not video["seen"]:
         video["seen"] = result
-        output_database_to_file(database, CONFIG.DATABASE_PATH)
+        database.to_json(CONFIG.DATABASE_PATH)
 
 
 # this is the application level flow entered when the user is watching any video from
@@ -1283,7 +1172,7 @@ def play_video(video_url, circuit_manager=None):
 # this is the application level flow entered when the user has chosen to refresh its
 # subscriptions
 def do_refresh_subscriptions(circuit_manager=None):
-    database = do_wait_screen("", parse_database_file, CONFIG.DATABASE_PATH)
+    database = do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
     channel_id_list = list(database["id to title"])
     refreshing = True
     while refreshing:
@@ -1394,10 +1283,10 @@ def main():
 
     if not CONFIG.DATABASE_PATH.is_file():
         logger.info("Initializing new database")
-        database = initiate_youtube_rss_database()
-        do_wait_screen("", output_database_to_file, database, CONFIG.DATABASE_PATH)
+        database = db.initialize_database()
+        do_wait_screen("", database.to_json, CONFIG.DATABASE_PATH)
     else:
-        database = do_wait_screen("", parse_database_file, CONFIG.DATABASE_PATH)
+        do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
 
     do_main_menu()
     logger.info("Program end")
