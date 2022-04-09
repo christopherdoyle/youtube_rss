@@ -29,9 +29,12 @@ import subprocess
 import sys
 import threading
 import urllib
+import urllib.parse
+from abc import ABC
 from html.parser import HTMLParser
 from json import JSONDecoder, JSONEncoder
 from multiprocessing import Process, ProcessError
+from typing import Optional
 
 import feedparser
 import requests as req
@@ -65,10 +68,11 @@ Thread classes
 
 class ErrorCatchingThread(threading.Thread):
     def __init__(self, function, *args, **kwargs):
-        threading.Thread.__init__(self)
+        super().__init__()
         self.function = function
         self.args = args
         self.kwargs = kwargs
+        self.exc = None
 
     def run(self):
         self.exc = None
@@ -79,9 +83,9 @@ class ErrorCatchingThread(threading.Thread):
         except Exception as exc:
             self.exc = exc
 
-    def join(self):
+    def join(self, timeout: Optional[float] = None) -> None:
         try:
-            threading.Thread.join(self)
+            super().join(timeout)
             if self.exc is not None:
                 raise self.exc
         except KeyboardInterrupt:
@@ -90,9 +94,9 @@ class ErrorCatchingThread(threading.Thread):
     def get_thread_id(self):
         if hasattr(self, "_thread_id"):
             return self._thread_id
-        for id, thread in threading._active.items():
+        for thread_id, thread in threading._active.items():
             if thread is self:
-                return id
+                return thread_id
 
 
 """
@@ -103,7 +107,7 @@ Parser classes
 # Parser used for extracting an RSS Address from channel page HTML
 class RssAddressParser(HTMLParser):
     def __init__(self):
-        super(RssAddressParser, self).__init__(convert_charrefs=True)
+        super().__init__(convert_charrefs=True)
         self.rss_address = None
 
     def handle_starttag(self, tag, attrs):
@@ -115,7 +119,7 @@ class RssAddressParser(HTMLParser):
 # Parser used for extracting information about channels from YouTube channel query HTML
 class ChannelQueryParser(HTMLParser):
     def __init__(self):
-        super(ChannelQueryParser, self).__init__(convert_charrefs=True)
+        super().__init__(convert_charrefs=True)
         self.is_script_tag = False
         self.result_list = None
 
@@ -143,7 +147,7 @@ class ChannelQueryParser(HTMLParser):
 # Parser used for extracting information about channels from YouTube channel query HTML
 class VideoQueryParser(HTMLParser):
     def __init__(self):
-        super(VideoQueryParser, self).__init__(convert_charrefs=True)
+        super().__init__(convert_charrefs=True)
         self.is_script_tag = False
         self.result_list = None
 
@@ -179,15 +183,11 @@ Indicator classes
 
 
 # Parent to all indicator classes
-class IndicatorClass:
-    def __init__(self):
-        raise InstantiateIndicatorClassError
+class IndicatorClass(ABC):
+    pass
 
 
 class NoCanvas(IndicatorClass):
-    def __init__(self):
-        pass
-
     def __exit__(self, dummy1, dummy2, dummy3):
         pass
 
@@ -234,7 +234,7 @@ class UnknownQueryStyle(Exception):
 class InstantiateIndicatorClassError(Exception):
     def __init__(self, message="Can't instantiate an indicator class!"):
         self.message = message
-        Exception.__init__(self, self.message)
+        super().__init__(message)
 
 
 """
@@ -249,7 +249,7 @@ class VideoQueryObject:
         self.thumbnail = thumbnail
         self.title = title
         if video_id is not None:
-            self.url = f"http://youtube.com/watch?v={video_id}"
+            self.url = f"https://youtube.com/watch?v={video_id}"
         else:
             self.url = None
 
@@ -274,10 +274,10 @@ class DatabaseEncoder(JSONEncoder):
 
 class DatabaseDecoder(JSONDecoder):
     def __init__(self, *args, **kwargs):
-        JSONDecoder.__init__(self, *args, **kwargs, object_hook=self.object_hook)
+        super().__init__(*args, **kwargs, object_hook=self.object_hook)
 
     def object_hook(self, dct):
-        if type(dct) is dict or type(dct) is list:
+        if isinstance(dct, (dict, list)):
             return Database(dct)
         return dct
 
@@ -402,7 +402,7 @@ class MarkAllAsReadKey(AdHocKey):
             database,
             channel_id,
         )
-        AdHocKey.__init__(self, key=key, item=item, activation_index=activation_index)
+        super().__init__(key=key, item=item, activation_index=activation_index)
 
 
 class MarkEntryAsReadKey(AdHocKey):
@@ -412,7 +412,7 @@ class MarkEntryAsReadKey(AdHocKey):
             lambda video: video.update({"seen": (not video["seen"])}),
             video,
         )
-        AdHocKey.__init__(self, key=key, item=item, activation_index=activation_index)
+        super().__init__(key=key, item=item, activation_index=activation_index)
 
 
 #############
@@ -462,7 +462,7 @@ def do_selection_query(
     query_style=ItemQuery,
     initial_index=None,
     show_item_number=True,
-    adhoc_keys=[],
+    adhoc_keys=None,
 ):
     return curses.wrapper(
         do_selection_query_ncurses,
@@ -471,7 +471,7 @@ def do_selection_query(
         query_style=query_style,
         initial_index=initial_index,
         show_item_number=show_item_number,
-        adhoc_keys=adhoc_keys,
+        adhoc_keys=adhoc_keys or [],
     )
 
 
@@ -484,7 +484,7 @@ def do_selection_query_ncurses(
     query_style=ItemQuery,
     initial_index=None,
     show_item_number=True,
-    adhoc_keys=[],
+    adhoc_keys=None,
 ):
     curses.curs_set(0)
     curses.init_pair(HIGHLIGHTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
@@ -508,8 +508,8 @@ def do_selection_query_ncurses(
             key = stdscr.getch()
             # Ad hoc keys should always take first precedence
 
-            if key in adhoc_keys:
-                for adhoc_key in adhoc_keys:
+            if key in (adhoc_keys or []):
+                for adhoc_key in adhoc_keys or []:
                     if adhoc_key.is_valid_index(choice_index):
                         if query_style is ItemQuery:
                             return adhoc_key.item
@@ -674,7 +674,7 @@ def print_menu(
         title_x = max(min(abs(title_x), width) * (title_x // abs(title_x)), 0)
     if len(query) >= width - 1:
         query = query[0 : width - 1]
-    if title_y >= 0 and title_y < height - 1:
+    if 0 <= title_y < height - 1:
         stdscr.addstr(title_y, title_x, query)
     for i, item in enumerate(menu):
         item_string = f"{i+1}: {item}" if show_item_number else str(item)
@@ -702,7 +702,7 @@ def print_menu(
                 thumbnail_placement.visibility = ueberzug.Visibility.VISIBLE
         stdscr.attron(attr)
         item_y = screen_center_y - n_rows_to_print // 2 + i + 2 - offset
-        if item_y >= 0 and item_y < height - 1 and item_string:
+        if 0 <= item_y < height - 1 and item_string:
             stdscr.addstr(item_y, item_x, item_string)
         stdscr.attroff(attr)
     stdscr.refresh()
@@ -714,17 +714,17 @@ Functions for retreiving and processing network data
 
 
 # use this function to make HTTP requests without using Tor
-def unproxied_get_http_content(url, session=None, method="GET", post_payload={}):
+def unproxied_get_http_content(url, session=None, method="GET", post_payload=None):
     if session is None:
         if method == "GET":
             return req.get(url)
         elif method == "POST":
-            return req.post(url, post_payload)
+            return req.post(url, post_payload or {})
     else:
         if method == "GET":
             return session.get(url)
         elif method == "POST":
-            return session.post(url, post_payload)
+            return session.post(url, post_payload or {})
 
 
 # use this function to get content (typically hypertext or xml) using HTTP from YouTube
@@ -774,7 +774,7 @@ def get_video_query_results(query, runtime_constants, circuit_manager=None):
         os.mkdir(THUMBNAIL_SEARCH_DIR)
         process = Process(
             target=get_search_thumbnails,
-            args=[parser.result_list, runtime_constants],
+            args=(parser.result_list, runtime_constants),
             kwargs={"circuit_manager": circuit_manager},
         )
         try:
@@ -1375,7 +1375,7 @@ def do_return_from_menu():
 ################
 
 if __name__ == "__main__":
-    flags = command_line_parser.readFlags(sys.argv)
+    flags = command_line_parser.read_flags(sys.argv)
     for flag in flags:
         if flag not in command_line_parser.allowedFlags:
             raise command_line_parser.CommandLineParseError
