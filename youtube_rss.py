@@ -890,6 +890,10 @@ def main():
     logger.addHandler(handler)
     logger.info("Program start")
 
+    if not utils.is_mpv_installed():
+        logger.error("MPV not found")
+        sys.exit(1)
+
     flags = command_line_parser.read_flags(sys.argv)
     for flag in flags:
         if flag not in command_line_parser.allowedFlags:

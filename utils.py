@@ -1,6 +1,7 @@
 import logging
 import os
 import signal
+import subprocess
 import threading
 from typing import Optional
 
@@ -42,3 +43,8 @@ class ErrorCatchingThread(threading.Thread):
         for thread_id, thread in threading._active.items():
             if thread is self:
                 return thread_id
+
+
+def is_mpv_installed() -> bool:
+    proc = subprocess.run(["which", "mpv"])
+    return proc.returncode == 0
