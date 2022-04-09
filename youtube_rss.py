@@ -155,10 +155,10 @@ class VideoQueryParser(HTMLParser):
             if "var ytInitialData" in data:
                 pattern = re.compile(
                     'video_id":"([^"]+)","thumbnail":{"thumbnails":'
-                    + '[{"url":"([^"]+)","width":[0-9]+,"height":[0-9]+},{"url"'
-                    + ':"[^"]+","width":[0-9]+,"height":[0-9]+}]},"title":{'
-                    + '"runs":[{"text":"[^"]+"}],"accessibility":{'
-                    + '"accessibilityData":{"label":"([^"]+)"}'
+                    '[{"url":"([^"]+)","width":[0-9]+,"height":[0-9]+},{"url"'
+                    ':"[^"]+","width":[0-9]+,"height":[0-9]+}]},"title":{'
+                    '"runs":[{"text":"[^"]+"}],"accessibility":{'
+                    '"accessibilityData":{"label":"([^"]+)"}'
                 )
                 tuple_list = pattern.findall(data)
                 result_list = []
@@ -348,14 +348,14 @@ class FeedDescriber:
 
     def __str__(self):
         return "".join(
-            [
+            (
                 self.channel_title,
                 ": (",
-                str(sum([1 for video in self.feed if not video["seen"]])),
+                str(sum(1 for video in self.feed if not video["seen"])),
                 "/",
                 str(len(self.feed)),
                 ")",
-            ]
+            )
         )
 
 
@@ -510,13 +510,13 @@ def do_selection_query_ncurses(
                         elif query_style is CombinedQuery:
                             return adhoc_key.item, choice_index
 
-            elif key in [curses.KEY_UP, ord("k")]:
+            elif key in (curses.KEY_UP, ord("k")):
                 jump_num_list = []
                 choice_index = (choice_index - 1) % len(options)
-            elif key in [curses.KEY_DOWN, ord("j")]:
+            elif key in (curses.KEY_DOWN, ord("j")):
                 jump_num_list = []
                 choice_index = (choice_index + 1) % len(options)
-            elif key in [ord(digit) for digit in "1234567890"]:
+            elif key in (ord(digit) for digit in "1234567890"):
                 if len(jump_num_list) < 6:
                     jump_num_list.append(chr(key))
             elif key in [curses.KEY_BACKSPACE, ord("\b"), ord("\x7f")]:
@@ -528,9 +528,9 @@ def do_selection_query_ncurses(
             elif key == ord("G"):
                 jump_num_list = []
                 choice_index = len(options) - 1
-            elif key in [ord("q"), ord("h"), curses.KEY_LEFT]:
+            elif key in (ord("q"), ord("h"), curses.KEY_LEFT):
                 raise KeyboardInterrupt
-            elif key in [curses.KEY_ENTER, 10, 13, ord("l"), curses.KEY_RIGHT]:
+            elif key in (curses.KEY_ENTER, 10, 13, ord("l"), curses.KEY_RIGHT):
                 if jump_num_list:
                     jump_num = int("".join(jump_num_list))
                     choice_index = min(jump_num - 1, len(options) - 1)
@@ -573,10 +573,8 @@ def do_get_user_input_ncurses(stdscr, query, max_input_length=40):
             [
                 "".join(user_input_chars),
                 "".join(
-                    [
-                        "—" if i == cursor_position else " "
-                        for i in range(max_input_length)
-                    ]
+                    "—" if i == cursor_position else " "
+                    for i in range(max_input_length)
                 ),
             ],
             stdscr,
@@ -585,16 +583,16 @@ def do_get_user_input_ncurses(stdscr, query, max_input_length=40):
             show_item_number=False,
         )
         key = stdscr.getch()
-        if key in [curses.KEY_BACKSPACE, ord("\b"), ord("\x7f")]:
+        if key in (curses.KEY_BACKSPACE, ord("\b"), ord("\x7f")):
             delete_index = cursor_position - 1
             if delete_index >= 0:
                 user_input_chars.pop(cursor_position - 1)
             cursor_position = max(0, cursor_position - 1)
-        elif key in [curses.KEY_DC]:
+        elif key in (curses.KEY_DC,):
             delete_index = cursor_position + 1
             if delete_index <= len(user_input_chars):
                 user_input_chars.pop(cursor_position)
-        elif key in [curses.KEY_ENTER, 10, 13]:
+        elif key in (curses.KEY_ENTER, 10, 13):
             return "".join(user_input_chars)
         elif key == curses.KEY_LEFT:
             cursor_position = max(0, cursor_position - 1)
@@ -633,10 +631,8 @@ def print_menu(
         item_x = max(min(screen_center_x - x_alignment, width - 2), 0)
     elif menu:
         menu_width = max(
-            [
-                len(f"{i+1}: {item}" if show_item_number else str(item))
-                for i, item in enumerate(menu)
-            ]
+            len(f"{i+1}: {item}" if show_item_number else str(item))
+            for i, item in enumerate(menu)
         )
         item_x = max(screen_center_x - menu_width // 2, 0)
     else:
@@ -863,7 +859,7 @@ def refresh_subscriptions_by_channel_id(channel_id_list, circuit_manager=None):
         process.start()
         process.join()
     except Exception as e:
-        process.kill
+        process.kill()
         raise e
     if process.exitcode != 0:
         raise ProcessError
@@ -920,22 +916,26 @@ def refresh_subscription_by_channel_id(channel_id, local_feed, circuit_manager=N
 
 # use this function to open a YouTube video url in mpv
 def open_url_in_mpv(url, max_resolution=1080, circuit_manager=None):
+    command = []
+    command += [
+        "mpv",
+        f"--ytdl-format=bestvideo[height=?{max_resolution}]+bestaudio/best",
+    ]
+    command.append(url)
+
+    mpv_process = None
     try:
-        command = []
-        command += [
-            "mpv",
-            f"--ytdl-format=bestvideo[height=?{max_resolution}]+bestaudio/best",
-        ]
-        command.append(url)
         mpv_process = subprocess.Popen(
             command, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT
         )
         mpv_process.wait()
         result = mpv_process.poll()
     except KeyboardInterrupt:
-        mpv_process.kill()
-        mpv_process.wait()
+        if mpv_process is not None:
+            mpv_process.kill()
+            mpv_process.wait()
         result = -1
+
     return result == 0
 
 
