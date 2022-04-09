@@ -1,6 +1,5 @@
 #! /usr/bin/env python3
 
-import curses
 import logging
 import os
 import re
@@ -10,47 +9,20 @@ import subprocess
 import sys
 import urllib
 import urllib.parse
-from abc import ABC
 from html.parser import HTMLParser
 from multiprocessing import Process, ProcessError
 from pathlib import Path
 
 import feedparser
-import requests as req
+import requests
 
 import command_line_parser
 import db
+import tui
 import utils
-
-try:
-    import ueberzug.lib.v0 as ueberzug
-except ImportError:
-    ueberzug = None
-
-#############
-# constants #
-#############
+from config import CONFIG
 
 logger = logging.getLogger("youtube_rss")
-
-
-class Config:
-    HOME = Path(os.environ.get("HOME"))
-    YOUTUBE_RSS_DIR = HOME / ".youtube_rss"
-    THUMBNAIL_DIR = YOUTUBE_RSS_DIR / "thumbnails"
-    THUMBNAIL_SEARCH_DIR = THUMBNAIL_DIR / "search"
-    DATABASE_PATH = YOUTUBE_RSS_DIR / "database"
-    LOG_PATH = YOUTUBE_RSS_DIR / "run.log"
-
-    HIGHLIGHTED = 1
-    NOT_HIGHLIGHTED = 2
-
-    ANY_INDEX = -1
-
-    USE_THUMBNAILS = False
-
-
-CONFIG = Config()
 
 ###########
 # classes #
@@ -132,66 +104,6 @@ class VideoQueryParser(HTMLParser):
                         )
                     )
                 self.result_list = result_list
-
-
-"""
-Indicator classes
-"""
-
-
-# Parent to all indicator classes
-class IndicatorClass(ABC):
-    pass
-
-
-class NoCanvas(IndicatorClass):
-    def __exit__(self, dummy1, dummy2, dummy3):
-        pass
-
-    def __enter__(self):
-        pass
-
-
-# returned from menu method to indicate that application flow should step
-# closer to the root menu
-class ReturnFromMenu(IndicatorClass):
-    pass
-
-
-# indicates whether selection query should return by index, item or both
-class QueryStyle(IndicatorClass):
-    pass
-
-
-# indicates that selection query should return by index
-class IndexQuery(QueryStyle):
-    pass
-
-
-# indicates that selection query should return by item
-class ItemQuery(QueryStyle):
-    pass
-
-
-# indicates that selection query should return by both item and index
-class CombinedQuery(QueryStyle):
-    pass
-
-
-"""
-Exception classes
-"""
-
-
-# indicates that the provided query style is not supported
-class UnknownQueryStyle(Exception):
-    pass
-
-
-class InstantiateIndicatorClassError(Exception):
-    def __init__(self, message="Can't instantiate an indicator class!"):
-        self.message = message
-        super().__init__(message)
 
 
 """
@@ -334,293 +246,6 @@ class MarkEntryAsReadKey(AdHocKey):
 #############
 
 """
-Presentation functions
-"""
-
-
-# This function displays a message while the user waits for a function to execute
-def do_wait_screen(message, wait_function, *args, **kwargs):
-    return curses.wrapper(
-        do_wait_screen_ncurses, message, wait_function, *args, **kwargs
-    )
-
-
-# This function is where the Ncurses level of do_wait_screen starts.
-# It should never be called directly, but always through do_wait_screen!
-def do_wait_screen_ncurses(stdscr, message, wait_function, *args, **kwargs):
-    curses.curs_set(0)
-    curses.init_pair(CONFIG.HIGHLIGHTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
-    curses.init_pair(CONFIG.NOT_HIGHLIGHTED, curses.COLOR_WHITE, curses.COLOR_BLACK)
-    print_menu(message, [], stdscr, 0, show_item_number=False)
-    return wait_function(*args, **kwargs)
-
-
-# This Function gets a yes/no response to some query from the user
-def do_yes_no_query(query):
-    return curses.wrapper(do_yes_no_query_ncurses, query)
-
-
-# This function is where the Ncurses level of do_yes_no_query starts.
-# It should never be called directly, but always through do_yes_no_query!
-def do_yes_no_query_ncurses(stdscr, query):
-    return (
-        do_selection_query_ncurses(stdscr, query, ["yes", "no"], show_item_number=False)
-        == "yes"
-    )
-
-
-# This function lets the user choose an object from a list
-def do_selection_query(
-    query,
-    options,
-    query_style=ItemQuery,
-    initial_index=None,
-    show_item_number=True,
-    adhoc_keys=None,
-):
-    return curses.wrapper(
-        do_selection_query_ncurses,
-        query,
-        options,
-        query_style=query_style,
-        initial_index=initial_index,
-        show_item_number=show_item_number,
-        adhoc_keys=adhoc_keys or [],
-    )
-
-
-# This function is where the Ncurses level of do_selection_query starts.
-# It should never be called directly, but always through do_selection_query!
-def do_selection_query_ncurses(
-    stdscr,
-    query,
-    options,
-    query_style=ItemQuery,
-    initial_index=None,
-    show_item_number=True,
-    adhoc_keys=None,
-):
-    curses.curs_set(0)
-    curses.init_pair(CONFIG.HIGHLIGHTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
-    curses.init_pair(CONFIG.NOT_HIGHLIGHTED, curses.COLOR_WHITE, curses.COLOR_BLACK)
-    jump_num_list = []
-    if initial_index is not None:
-        choice_index = initial_index
-    else:
-        choice_index = 0
-    while True:
-        with (ueberzug.Canvas() if CONFIG.USE_THUMBNAILS else NoCanvas()) as canvas:
-            print_menu(
-                query,
-                options,
-                stdscr,
-                choice_index,
-                show_item_number=show_item_number,
-                jump_num_str="".join(jump_num_list),
-                canvas=canvas,
-            )
-            key = stdscr.getch()
-            # Ad hoc keys should always take first precedence
-
-            if key in (adhoc_keys or []):
-                for adhoc_key in adhoc_keys or []:
-                    if adhoc_key.is_valid_index(choice_index):
-                        if query_style is ItemQuery:
-                            return adhoc_key.item
-                        elif query_style is IndexQuery:
-                            return choice_index
-                        elif query_style is CombinedQuery:
-                            return adhoc_key.item, choice_index
-
-            elif key in (curses.KEY_UP, ord("k")):
-                jump_num_list = []
-                choice_index = (choice_index - 1) % len(options)
-            elif key in (curses.KEY_DOWN, ord("j")):
-                jump_num_list = []
-                choice_index = (choice_index + 1) % len(options)
-            elif key in (ord(digit) for digit in "1234567890"):
-                if len(jump_num_list) < 6:
-                    jump_num_list.append(chr(key))
-            elif key in [curses.KEY_BACKSPACE, ord("\b"), ord("\x7f")]:
-                if jump_num_list:
-                    jump_num_list.pop()
-            elif key == ord("g"):
-                jump_num_list = []
-                choice_index = 0
-            elif key == ord("G"):
-                jump_num_list = []
-                choice_index = len(options) - 1
-            elif key in (ord("q"), ord("h"), curses.KEY_LEFT):
-                raise KeyboardInterrupt
-            elif key in (curses.KEY_ENTER, 10, 13, ord("l"), curses.KEY_RIGHT):
-                if jump_num_list:
-                    jump_num = int("".join(jump_num_list))
-                    choice_index = min(jump_num - 1, len(options) - 1)
-                    jump_num_list = []
-                elif query_style is ItemQuery:
-                    return options[choice_index]
-                elif query_style is IndexQuery:
-                    return choice_index
-                elif query_style is CombinedQuery:
-                    return options[choice_index], choice_index
-                else:
-                    raise UnknownQueryStyle
-
-
-# This function displays a piece of information to the user until they confirm having
-# seen it
-def do_notify(message):
-    do_selection_query(message, ["ok"], show_item_number=False)
-
-
-# This function gets a string of written input from the user
-def do_get_user_input(query, max_input_length=40):
-    return curses.wrapper(
-        do_get_user_input_ncurses, query, max_input_length=max_input_length
-    )
-
-
-# This function is where the Ncurses level of do_get_user_input starts.
-# It should never be called directly, but always through do_get_user_input!
-def do_get_user_input_ncurses(stdscr, query, max_input_length=40):
-    curses.curs_set(0)
-    curses.init_pair(CONFIG.HIGHLIGHTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
-    curses.init_pair(CONFIG.NOT_HIGHLIGHTED, curses.COLOR_WHITE, curses.COLOR_BLACK)
-    curses.curs_set(0)
-    cursor_position = 0
-    user_input_chars = []
-    while True:
-        print_menu(
-            query,
-            [
-                "".join(user_input_chars),
-                "".join(
-                    "—" if i == cursor_position else " "
-                    for i in range(max_input_length)
-                ),
-            ],
-            stdscr,
-            0,
-            x_alignment=max_input_length // 2,
-            show_item_number=False,
-        )
-        key = stdscr.getch()
-        if key in (curses.KEY_BACKSPACE, ord("\b"), ord("\x7f")):
-            delete_index = cursor_position - 1
-            if delete_index >= 0:
-                user_input_chars.pop(cursor_position - 1)
-            cursor_position = max(0, cursor_position - 1)
-        elif key in (curses.KEY_DC,):
-            delete_index = cursor_position + 1
-            if delete_index <= len(user_input_chars):
-                user_input_chars.pop(cursor_position)
-        elif key in (curses.KEY_ENTER, 10, 13):
-            return "".join(user_input_chars)
-        elif key == curses.KEY_LEFT:
-            cursor_position = max(0, cursor_position - 1)
-        elif key == curses.KEY_RIGHT:
-            cursor_position = min(len(user_input_chars), cursor_position + 1)
-        elif key == curses.KEY_RESIZE:
-            pass
-        elif len(user_input_chars) < max_input_length:
-            user_input_chars.insert(cursor_position, chr(key))
-            cursor_position = min(max_input_length, cursor_position + 1)
-
-
-# This function is used to visually represent a query and a number of menu items to the
-# user, by using nCurses. It is used for all text printing in the program (even where
-# no application level menu is presented, i.e by simply not providing a query and no
-# menu objects)
-def print_menu(
-    query,
-    menu,
-    stdscr,
-    choice_index,
-    x_alignment=None,
-    show_item_number=True,
-    jump_num_str="",
-    canvas=None,
-):
-    if canvas is None:
-        canvas = NoCanvas()
-    stdscr.clear()
-    height, width = stdscr.getmaxyx()
-    screen_center_x = width // 2
-    screen_center_y = height // 2
-    n_rows_to_print = len(menu) + 2
-
-    if x_alignment is not None:
-        item_x = max(min(screen_center_x - x_alignment, width - 2), 0)
-    elif menu:
-        menu_width = max(
-            len(f"{i+1}: {item}" if show_item_number else str(item))
-            for i, item in enumerate(menu)
-        )
-        item_x = max(screen_center_x - menu_width // 2, 0)
-    else:
-        item_x = None
-
-    if item_x != 0 and item_x is not None:
-        item_x = max(min(item_x, width - 2), 0)
-
-    jump_num_str = jump_num_str[: max(min(len(jump_num_str), width - 1), 0)]
-    if jump_num_str:
-        stdscr.addstr(0, 0, jump_num_str)
-
-    offset = 0
-    title_y = screen_center_y - n_rows_to_print // 2
-    if n_rows_to_print >= height - 2:
-        y_title_theoretical = screen_center_y - n_rows_to_print // 2
-        y_selected_theoretical = y_title_theoretical + 2 + choice_index
-        y_last_theoretical = y_title_theoretical + n_rows_to_print - 1
-        offset = min(
-            max(y_selected_theoretical - screen_center_y, y_title_theoretical),
-            y_last_theoretical - (height - 2),
-        )
-    title_y -= offset
-
-    title_x = max(screen_center_x - (len(query) // 2), 0)
-    if title_x != 0:
-        title_x = max(min(abs(title_x), width) * (title_x // abs(title_x)), 0)
-    if len(query) >= width - 1:
-        query = query[0 : width - 1]
-    if 0 <= title_y < height - 1:
-        stdscr.addstr(title_y, title_x, query)
-    for i, item in enumerate(menu):
-        item_string = f"{i+1}: {item}" if show_item_number else str(item)
-        if item_x + len(item_string) >= width - 1:
-            item_string = item_string[: max((width - item_x - 2), 0)]
-        attr = curses.color_pair(
-            CONFIG.HIGHLIGHTED if i == choice_index else CONFIG.NOT_HIGHLIGHTED
-        )
-        if (
-            i == choice_index
-            and hasattr(item, "description")
-            and hasattr(item.description, "getThumbnail")
-            and type(canvas) is not NoCanvas
-        ):
-            thumbnail_width = item_x - 1
-            thumbnail_height = height - 3
-            if not (thumbnail_width <= 0 or thumbnail_height <= 0):
-                thumbnail_placement = canvas.create_placement(
-                    "thumbnail",
-                    x=0,
-                    y=2,
-                    scaler=ueberzug.ScalerOption.CONTAIN.value,
-                    width=thumbnail_width,
-                    height=thumbnail_height,
-                )
-                thumbnail_placement.path = item.description.get_thumbnail()
-                thumbnail_placement.visibility = ueberzug.Visibility.VISIBLE
-        stdscr.attron(attr)
-        item_y = screen_center_y - n_rows_to_print // 2 + i + 2 - offset
-        if 0 <= item_y < height - 1 and item_string:
-            stdscr.addstr(item_y, item_x, item_string)
-        stdscr.attroff(attr)
-    stdscr.refresh()
-
-
-"""
 Functions for retreiving and processing network data
 """
 
@@ -629,9 +254,9 @@ Functions for retreiving and processing network data
 def unproxied_get_http_content(url, session=None, method="GET", post_payload=None):
     if session is None:
         if method == "GET":
-            return req.get(url)
+            return requests.get(url)
         elif method == "POST":
-            return req.post(url, post_payload or {})
+            return requests.post(url, post_payload or {})
     else:
         if method == "GET":
             return session.get(url)
@@ -641,7 +266,7 @@ def unproxied_get_http_content(url, session=None, method="GET", post_payload=Non
 
 # use this function to get content (typically hypertext or xml) using HTTP from YouTube
 def get_http_content(url, circuit_manager=None, auth=None):
-    session = req.Session()
+    session = requests.Session()
     session.headers["Accept-Language"] = "en-US"
     # This cookie lets us avoid the YouTube consent page
     session.cookies["CONSENT"] = "YES+"
@@ -887,11 +512,11 @@ def do_mark_channel_as_read(database, channel_id):
 # this is the application level flow entered when the user has chosen to search for a
 # video
 def do_interactive_search_for_video(circuit_manager=None):
-    query = do_get_user_input("Search for video: ")
+    query = tui.do_get_user_input("Search for video: ")
     querying = True
     while querying:
         try:
-            result_list = do_wait_screen(
+            result_list = tui.do_wait_screen(
                 "Getting video results...",
                 get_video_query_results,
                 query,
@@ -913,11 +538,11 @@ def do_interactive_search_for_video(circuit_manager=None):
                 do_method_menu(f"Search results for '{query}':", menu_options)
                 querying = False
             else:
-                do_notify("no results found")
+                tui.do_notify("no results found")
                 querying = False
         except ProcessError as e:
             logger.error(e)
-            if not do_yes_no_query("Something went wrong. Try again?"):
+            if not tui.do_yes_no_query("Something went wrong. Try again?"):
                 querying = False
 
     if CONFIG.THUMBNAIL_SEARCH_DIR.is_dir():
@@ -982,11 +607,11 @@ def get_search_thumbnail_from_search_result(result, auth=None):
 # this is the application level flow entered when the user has chosen to subscribe to a
 # new channel
 def do_interactive_channel_subscribe(circuit_manager=None):
-    query = do_get_user_input("Enter channel to search for: ")
+    query = tui.do_get_user_input("Enter channel to search for: ")
     querying = True
     while querying:
         try:
-            result_list = do_wait_screen(
+            result_list = tui.do_wait_screen(
                 "Getting channel results...",
                 get_channel_query_results,
                 query,
@@ -1012,11 +637,11 @@ def do_interactive_channel_subscribe(circuit_manager=None):
                 )
                 querying = False
             else:
-                if not do_yes_no_query("No results found. Try again?"):
+                if not tui.do_yes_no_query("No results found. Try again?"):
                     querying = False
-        except req.exceptions.ConnectionError as e:
+        except requests.exceptions.ConnectionError as e:
             logger.error(e)
-            if not do_yes_no_query(
+            if not tui.do_yes_no_query(
                 "Something went wrong with the connection. Try again?"
             ):
                 querying = False
@@ -1025,14 +650,14 @@ def do_interactive_channel_subscribe(circuit_manager=None):
 # this is the application level flow entered when the user has chosen a channel that it
 # wants to subscribe to
 def do_channel_subscribe(result, circuit_manager):
-    database = do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
+    database = tui.do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
     refreshing = True
     if result.channel_id in database["feeds"]:
-        do_notify("Already subscribed to this channel!")
+        tui.do_notify("Already subscribed to this channel!")
         return
     while refreshing:
         try:
-            do_wait_screen(
+            tui.do_wait_screen(
                 f"getting data from feed for {result.title}...",
                 add_subscription_to_database,
                 result.channel_id,
@@ -1041,22 +666,23 @@ def do_channel_subscribe(result, circuit_manager):
                 circuit_manager=circuit_manager,
             )
             refreshing = False
-        except req.exceptions.ConnectionError as e:
+        except requests.exceptions.ConnectionError as e:
             logger.error(e)
-            if not do_yes_no_query(
+            if not tui.do_yes_no_query(
                 "Something went wrong with the " + "connection. Try again?"
             ):
                 do_channel_unsubscribe(result.title)
                 refreshing = False
-    return ReturnFromMenu
+
+    return tui.ReturnFromMenu
 
 
 # this is the application level flow entered when the user has chosen to unsubscribe to
 # a channel
 def do_interactive_channel_unsubscribe():
-    database = do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
+    database = tui.do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
     if not database["title to id"]:
-        do_notify("You are not subscribed to any channels")
+        tui.do_notify("You are not subscribed to any channels")
         return
     menu_options = [
         MethodMenuDecision(channel_title, do_channel_unsubscribe, channel_title)
@@ -1069,18 +695,18 @@ def do_interactive_channel_unsubscribe():
 # this is the application level flow entered when the user has chosen a channel that it
 # wants to unsubscribe from
 def do_channel_unsubscribe(channel_title):
-    database = do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
+    database = tui.do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
     if CONFIG.USE_THUMBNAILS:
         delete_thumbnails_by_channel_title(database, channel_title)
     remove_subscription_from_database_by_channel_title(database, channel_title)
     database.to_json(CONFIG.DATABASE_PATH)
-    return ReturnFromMenu
+    return tui.ReturnFromMenu
 
 
 # this is the application level flow entered when the user has chosen to browse
 # its current subscriptions
 def do_interactive_browse_subscriptions(circuit_manager):
-    database = do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
+    database = tui.do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
     menu_options = [
         MethodMenuDecision(
             FeedDescriber(
@@ -1100,7 +726,7 @@ def do_interactive_browse_subscriptions(circuit_manager):
     ]
 
     if not menu_options:
-        do_notify("You are not subscribed to any channels")
+        tui.do_notify("You are not subscribed to any channels")
         return
 
     menu_options.insert(0, MethodMenuDecision("[Go back]", do_return_from_menu))
@@ -1150,19 +776,19 @@ def do_play_video_from_subscription(database, video, circuit_manager):
 # YouTube
 def play_video(video_url, circuit_manager=None):
     resolution_menu_list = [1080, 720, 480, 240]
-    max_resolution = do_selection_query(
+    max_resolution = tui.do_selection_query(
         "Which maximum resolution do you want to use?", resolution_menu_list
     )
     result = False
     while not result:
-        result = do_wait_screen(
+        result = tui.do_wait_screen(
             "playing video...",
             open_url_in_mpv,
             video_url,
             max_resolution=max_resolution,
             circuit_manager=circuit_manager,
         )
-        if result or not do_yes_no_query(
+        if result or not tui.do_yes_no_query(
             "Something went wrong when playing the " + "video. Try again?"
         ):
             break
@@ -1172,12 +798,12 @@ def play_video(video_url, circuit_manager=None):
 # this is the application level flow entered when the user has chosen to refresh its
 # subscriptions
 def do_refresh_subscriptions(circuit_manager=None):
-    database = do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
+    database = tui.do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
     channel_id_list = list(database["id to title"])
     refreshing = True
     while refreshing:
         try:
-            do_wait_screen(
+            tui.do_wait_screen(
                 "refreshing subscriptions...",
                 refresh_subscriptions_by_channel_id,
                 channel_id_list,
@@ -1186,7 +812,7 @@ def do_refresh_subscriptions(circuit_manager=None):
             refreshing = False
         except ProcessError as e:
             logger.error(e)
-            if not do_yes_no_query("Something went wrong. Try again?"):
+            if not tui.do_yes_no_query("Something went wrong. Try again?"):
                 refreshing = False
 
 
@@ -1228,11 +854,11 @@ def do_method_menu(query, menu_options, show_item_number=True, adhoc_keys=None):
     index = 0
     try:
         while True:
-            method_menu_decision, index = do_selection_query(
+            method_menu_decision, index = tui.do_selection_query(
                 query,
                 menu_options,
                 initial_index=index,
-                query_style=CombinedQuery,
+                query_style=tui.CombinedQuery,
                 show_item_number=show_item_number,
                 adhoc_keys=adhoc_keys or [],
             )
@@ -1240,7 +866,7 @@ def do_method_menu(query, menu_options, show_item_number=True, adhoc_keys=None):
                 result = method_menu_decision.execute_decision()
             except KeyboardInterrupt:
                 result = None
-            if result is ReturnFromMenu:
+            if result is tui.ReturnFromMenu:
                 return
     except KeyboardInterrupt:
         return
@@ -1249,7 +875,7 @@ def do_method_menu(query, menu_options, show_item_number=True, adhoc_keys=None):
 # this function is an application level flow which when selected from a method
 # menu simply returns to the preceding menu (one step closer to the root menu)
 def do_return_from_menu():
-    return ReturnFromMenu
+    return tui.ReturnFromMenu
 
 
 ################
@@ -1284,9 +910,9 @@ def main():
     if not CONFIG.DATABASE_PATH.is_file():
         logger.info("Initializing new database")
         database = db.initialize_database()
-        do_wait_screen("", database.to_json, CONFIG.DATABASE_PATH)
+        tui.do_wait_screen("", database.to_json, CONFIG.DATABASE_PATH)
     else:
-        do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
+        tui.do_wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
 
     do_main_menu()
     logger.info("Program end")
