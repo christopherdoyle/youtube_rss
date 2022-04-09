@@ -1,6 +1,3 @@
-#! /usr/bin/env python3
-
-
 class CommandLineParseError(Exception):
     pass
 
@@ -96,13 +93,4 @@ def read_flags(argv):
     return flags
 
 
-allowedFlags = [FlagDef(key="use-thumbnails", allowed_value=None)]
-
-if __name__ == "__main__":
-    import sys
-
-    print(sys.argv)
-    flags = read_flags(sys.argv)
-    for flag in flags:
-        if flag in allowedFlags:
-            print(f"{flag.key} is an allowed flag")
+allowed_flags = [FlagDef(key="use-thumbnails", allowed_value=None)]

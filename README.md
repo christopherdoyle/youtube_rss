@@ -35,6 +35,12 @@ needs to be installed (I use the latest version on their [official website](http
 at the time of this writing, the version in the Ubuntu rebository seems too old to work
 the way this project uses it).
 
+## Usage
+
+```commandline
+python -m youtube_rss
+```
+
 ## Disclaimer
 
 Note that while I am enthusiastic about privacy and security,

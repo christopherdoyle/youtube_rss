@@ -1,7 +1,7 @@
 import curses
 from abc import ABC
 
-from config import CONFIG
+from .config import CONFIG
 
 try:
     import ueberzug.lib.v0 as ueberzug

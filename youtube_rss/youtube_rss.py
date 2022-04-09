@@ -1,12 +1,7 @@
-#! /usr/bin/env python3
-
 import logging
-import os
 import re
 import shutil
-import signal
 import subprocess
-import sys
 import urllib
 import urllib.parse
 from html.parser import HTMLParser
@@ -16,11 +11,8 @@ from pathlib import Path
 import feedparser
 import requests
 
-import command_line_parser
-import db
-import tui
-import utils
-from config import CONFIG
+from . import db, tui, utils
+from .config import CONFIG
 
 logger = logging.getLogger("youtube_rss")
 
@@ -876,52 +868,3 @@ def do_method_menu(query, menu_options, show_item_number=True, adhoc_keys=None):
 # menu simply returns to the preceding menu (one step closer to the root menu)
 def do_return_from_menu():
     return tui.ReturnFromMenu
-
-
-################
-# main section #
-################
-
-
-def main():
-    logger.level = logging.DEBUG
-    handler = logging.FileHandler(CONFIG.LOG_PATH)
-    handler.level = logging.DEBUG
-    logger.addHandler(handler)
-    logger.info("Program start")
-
-    if not utils.is_mpv_installed():
-        logger.error("MPV not found")
-        sys.exit(1)
-
-    flags = command_line_parser.read_flags(sys.argv)
-    for flag in flags:
-        if flag not in command_line_parser.allowedFlags:
-            raise command_line_parser.CommandLineParseError
-
-    if "use-thumbnails" in flags:
-        flag = flags[flags.index("use-thumbnails")]
-        flag.treated = True
-        CONFIG.USE_THUMBNAILS = True
-
-    for flag in flags:
-        if not flag.treated:
-            raise command_line_parser.CommandLineParseError
-
-    CONFIG.YOUTUBE_RSS_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG.THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
-
-    if not CONFIG.DATABASE_PATH.is_file():
-        logger.info("Initializing new database")
-        database = db.initialize_database()
-        tui.wait_screen("", database.to_json, CONFIG.DATABASE_PATH)
-    else:
-        tui.wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
-
-    do_main_menu()
-    logger.info("Program end")
-    os.kill(os.getpid(), signal.SIGTERM)
-
-
-if __name__ == "__main__":
-    main()
