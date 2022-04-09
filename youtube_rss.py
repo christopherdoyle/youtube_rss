@@ -32,19 +32,24 @@ except ImportError:
 # constants #
 #############
 
-HOME = Path(os.environ.get("HOME"))
-YOUTUBE_RSS_DIR = HOME / ".youtube_rss"
-THUMBNAIL_DIR = YOUTUBE_RSS_DIR / "thumbnails"
-THUMBNAIL_SEARCH_DIR = THUMBNAIL_DIR / "search"
-DATABASE_PATH = YOUTUBE_RSS_DIR / "database"
-LOG_PATH = YOUTUBE_RSS_DIR / "log"
 
-HIGHLIGHTED = 1
-NOT_HIGHLIGHTED = 2
+class Config:
+    HOME = Path(os.environ.get("HOME"))
+    YOUTUBE_RSS_DIR = HOME / ".youtube_rss"
+    THUMBNAIL_DIR = YOUTUBE_RSS_DIR / "thumbnails"
+    THUMBNAIL_SEARCH_DIR = THUMBNAIL_DIR / "search"
+    DATABASE_PATH = YOUTUBE_RSS_DIR / "database"
+    LOG_PATH = YOUTUBE_RSS_DIR / "log"
 
-ANY_INDEX = -1
+    HIGHLIGHTED = 1
+    NOT_HIGHLIGHTED = 2
 
-USE_THUMBNAILS = False
+    ANY_INDEX = -1
+
+    USE_THUMBNAILS = False
+
+
+CONFIG = Config()
 
 ###########
 # classes #
@@ -333,7 +338,7 @@ class VideoQueryObjectDescriber:
         return self.video_query_object.title
 
     def get_thumbnail(self):
-        return THUMBNAIL_SEARCH_DIR / self.video_query_object.video_id + ".jpg"
+        return CONFIG.THUMBNAIL_SEARCH_DIR / self.video_query_object.video_id + ".jpg"
 
 
 class FeedDescriber:
@@ -355,13 +360,13 @@ class FeedDescriber:
 
 
 class AdHocKey:
-    def __init__(self, key, item, activation_index=ANY_INDEX):
+    def __init__(self, key, item, activation_index=CONFIG.ANY_INDEX):
         self.key = key
         self.item = item
         self.activation_index = activation_index
 
     def is_valid_index(self, index):
-        if self.activation_index == ANY_INDEX:
+        if self.activation_index == CONFIG.ANY_INDEX:
             return True
         else:
             return index == self.activation_index
@@ -422,8 +427,8 @@ def do_wait_screen(message, wait_function, *args, **kwargs):
 # It should never be called directly, but always through do_wait_screen!
 def do_wait_screen_ncurses(stdscr, message, wait_function, *args, **kwargs):
     curses.curs_set(0)
-    curses.init_pair(HIGHLIGHTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
-    curses.init_pair(NOT_HIGHLIGHTED, curses.COLOR_WHITE, curses.COLOR_BLACK)
+    curses.init_pair(CONFIG.HIGHLIGHTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
+    curses.init_pair(CONFIG.NOT_HIGHLIGHTED, curses.COLOR_WHITE, curses.COLOR_BLACK)
     print_menu(message, [], stdscr, 0, show_item_number=False)
     return wait_function(*args, **kwargs)
 
@@ -474,15 +479,15 @@ def do_selection_query_ncurses(
     adhoc_keys=None,
 ):
     curses.curs_set(0)
-    curses.init_pair(HIGHLIGHTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
-    curses.init_pair(NOT_HIGHLIGHTED, curses.COLOR_WHITE, curses.COLOR_BLACK)
+    curses.init_pair(CONFIG.HIGHLIGHTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
+    curses.init_pair(CONFIG.NOT_HIGHLIGHTED, curses.COLOR_WHITE, curses.COLOR_BLACK)
     jump_num_list = []
     if initial_index is not None:
         choice_index = initial_index
     else:
         choice_index = 0
     while True:
-        with (ueberzug.Canvas() if USE_THUMBNAILS else NoCanvas()) as canvas:
+        with (ueberzug.Canvas() if CONFIG.USE_THUMBNAILS else NoCanvas()) as canvas:
             print_menu(
                 query,
                 options,
@@ -557,8 +562,8 @@ def do_get_user_input(query, max_input_length=40):
 # It should never be called directly, but always through do_get_user_input!
 def do_get_user_input_ncurses(stdscr, query, max_input_length=40):
     curses.curs_set(0)
-    curses.init_pair(HIGHLIGHTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
-    curses.init_pair(NOT_HIGHLIGHTED, curses.COLOR_WHITE, curses.COLOR_BLACK)
+    curses.init_pair(CONFIG.HIGHLIGHTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
+    curses.init_pair(CONFIG.NOT_HIGHLIGHTED, curses.COLOR_WHITE, curses.COLOR_BLACK)
     curses.curs_set(0)
     cursor_position = 0
     user_input_chars = []
@@ -667,7 +672,9 @@ def print_menu(
         item_string = f"{i+1}: {item}" if show_item_number else str(item)
         if item_x + len(item_string) >= width - 1:
             item_string = item_string[: max((width - item_x - 2), 0)]
-        attr = curses.color_pair(HIGHLIGHTED if i == choice_index else NOT_HIGHLIGHTED)
+        attr = curses.color_pair(
+            CONFIG.HIGHLIGHTED if i == choice_index else CONFIG.NOT_HIGHLIGHTED
+        )
         if (
             i == choice_index
             and hasattr(item, "description")
@@ -746,7 +753,7 @@ def get_channel_query_results(query, circuit_manager=None):
 
 # use this function to get a list of query results from searching for a video
 # results are of the type VideoQueryObject
-def get_video_query_results(query, runtime_constants, circuit_manager=None):
+def get_video_query_results(query, circuit_manager=None):
     url = (
         "https://youtube.com/results?search_query="
         + urllib.parse.quote(query)
@@ -755,14 +762,14 @@ def get_video_query_results(query, runtime_constants, circuit_manager=None):
     html_ceontent = get_http_content(url, circuit_manager=circuit_manager).text
     parser = VideoQueryParser()
     parser.feed(html_ceontent)
-    if USE_THUMBNAILS:
-        if THUMBNAIL_SEARCH_DIR.is_dir():
-            shutil.rmtree(THUMBNAIL_SEARCH_DIR)
+    if CONFIG.USE_THUMBNAILS:
+        if CONFIG.THUMBNAIL_SEARCH_DIR.is_dir():
+            shutil.rmtree(CONFIG.THUMBNAIL_SEARCH_DIR)
 
-        THUMBNAIL_SEARCH_DIR.mkdir()
+        CONFIG.THUMBNAIL_SEARCH_DIR.mkdir()
         process = Process(
             target=get_search_thumbnails,
-            args=(parser.result_list, runtime_constants),
+            args=(parser.result_list,),
             kwargs={"circuit_manager": circuit_manager},
         )
         try:
@@ -796,16 +803,16 @@ def initiate_youtube_rss_database():
 
 # use this function to add a subscription to the database
 def add_subscription_to_database(
-    channel_id, runtime_constants, channel_title, refresh=False, circuit_manager=None
+    channel_id, channel_title, refresh=False, circuit_manager=None
 ):
-    database = parse_database_file(DATABASE_PATH)
+    database = parse_database_file(CONFIG.DATABASE_PATH)
     database["feeds"][channel_id] = []
     database["id to title"][channel_id] = channel_title
     database["title to id"][channel_title] = channel_id
-    output_database_to_file(database, DATABASE_PATH)
+    output_database_to_file(database, CONFIG.DATABASE_PATH)
     if refresh:
         refresh_subscriptions_by_channel_id(
-            [channel_id], runtime_constants, circuit_manager=circuit_manager
+            [channel_id], circuit_manager=circuit_manager
         )
 
 
@@ -841,17 +848,15 @@ def remove_subscription_from_database_by_channel_id(database, channel_id):
     channel_title = database["id to title"].pop(channel_id)
     database["title to id"].pop(channel_title)
     database["feeds"].pop(channel_id)
-    output_database_to_file(database, DATABASE_PATH)
+    output_database_to_file(database, CONFIG.DATABASE_PATH)
 
 
 # use this function to retrieve new RSS entries for a subscription and add them to
 # a database
-def refresh_subscriptions_by_channel_id(
-    channel_id_list, runtime_constants, circuit_manager=None
-):
+def refresh_subscriptions_by_channel_id(channel_id_list, circuit_manager=None):
     process = Process(
         target=refresh_subscriptions_by_channel_id_process,
-        args=(channel_id_list, runtime_constants),
+        args=(channel_id_list,),
         kwargs={"circuit_manager": circuit_manager},
     )
     try:
@@ -864,10 +869,8 @@ def refresh_subscriptions_by_channel_id(
         raise ProcessError
 
 
-def refresh_subscriptions_by_channel_id_process(
-    channel_id_list, runtime_constants, circuit_manager=None
-):
-    database = parse_database_file(DATABASE_PATH)
+def refresh_subscriptions_by_channel_id_process(channel_id_list, circuit_manager=None):
+    database = parse_database_file(CONFIG.DATABASE_PATH)
     local_feeds = database["feeds"]
     threads = []
     for channel_id in channel_id_list:
@@ -882,11 +885,11 @@ def refresh_subscriptions_by_channel_id_process(
         thread.start()
     for thread in threads:
         thread.join()
-    if runtime_constants["USE_THUMBNAILS"]:
+    if CONFIG.USE_THUMBNAILS:
         get_thumbnails_for_all_subscriptions(
             channel_id_list, database, circuit_manager=circuit_manager
         )
-    output_database_to_file(database, runtime_constants["DATABASE_PATH"])
+    output_database_to_file(database, CONFIG.DATABASE_PATH)
 
 
 def refresh_subscription_by_channel_id(channel_id, local_feed, circuit_manager=None):
@@ -979,12 +982,12 @@ def do_mark_channel_as_read(database, channel_id):
             break
     for video in database["feeds"][channel_id]:
         video["seen"] = not all_are_already_marked_as_read
-    output_database_to_file(database, DATABASE_PATH)
+    output_database_to_file(database, CONFIG.DATABASE_PATH)
 
 
 # this is the application level flow entered when the user has chosen to search for a
 # video
-def do_interactive_search_for_video(runtime_constants, circuit_manager=None):
+def do_interactive_search_for_video(circuit_manager=None):
     query = do_get_user_input("Search for video: ")
     querying = True
     while querying:
@@ -993,7 +996,6 @@ def do_interactive_search_for_video(runtime_constants, circuit_manager=None):
                 "Getting video results...",
                 get_video_query_results,
                 query,
-                runtime_constants,
                 circuit_manager=circuit_manager,
             )
             if result_list:
@@ -1017,8 +1019,9 @@ def do_interactive_search_for_video(runtime_constants, circuit_manager=None):
         except ProcessError:
             if not do_yes_no_query("Something went wrong. Try again?"):
                 querying = False
-    if os.path.isdir(THUMBNAIL_SEARCH_DIR):
-        shutil.rmtree(THUMBNAIL_SEARCH_DIR)
+
+    if CONFIG.THUMBNAIL_SEARCH_DIR.is_dir():
+        shutil.rmtree(CONFIG.THUMBNAIL_SEARCH_DIR)
 
 
 def get_thumbnails_for_all_subscriptions(
@@ -1044,13 +1047,13 @@ def get_thumbnails_for_feed(feed, auth=None):
         if "thumbnail file" in entry:
             continue
         video_id = entry["id"].split(":")[-1]
-        thumbnail_filename = THUMBNAIL_DIR / video_id + ".jpg"
+        thumbnail_filename = CONFIG.THUMBNAIL_DIR / video_id + ".jpg"
         thumbnail_content = get_http_content(entry["thumbnail"], auth=auth)
         entry["thumbnail file"] = thumbnail_filename
         thumbnail_filename.write_bytes(thumbnail_content.content)
 
 
-def get_search_thumbnails(result_list, runtime_constants, circuit_manager=None):
+def get_search_thumbnails(result_list, circuit_manager=None):
     if circuit_manager is not None:
         auth = circuit_manager.getAuth()
     else:
@@ -1060,7 +1063,6 @@ def get_search_thumbnails(result_list, runtime_constants, circuit_manager=None):
         thread = ErrorCatchingThread(
             get_search_thumbnail_from_search_result,
             result,
-            runtime_constants,
             auth=auth,
         )
         threads.append(thread)
@@ -1069,11 +1071,9 @@ def get_search_thumbnails(result_list, runtime_constants, circuit_manager=None):
         thread.join()
 
 
-def get_search_thumbnail_from_search_result(result, runtime_constants, auth=None):
+def get_search_thumbnail_from_search_result(result, auth=None):
     video_id = result.video_id.split(":")[-1]
-    thumbnail_filename: Path = (
-        runtime_constants["THUMBNAIL_SEARCH_DIR"] / video_id + ".jpg"
-    )
+    thumbnail_filename: Path = CONFIG.THUMBNAIL_SEARCH_DIR / video_id + ".jpg"
     thumbnail_content = get_http_content(result.thumbnail, auth=auth)
     result.thumbnailFile = thumbnail_filename
     thumbnail_filename.write_bytes(thumbnail_content.content)
@@ -1081,7 +1081,7 @@ def get_search_thumbnail_from_search_result(result, runtime_constants, auth=None
 
 # this is the application level flow entered when the user has chosen to subscribe to a
 # new channel
-def do_interactive_channel_subscribe(runtime_constants, circuit_manager=None):
+def do_interactive_channel_subscribe(circuit_manager=None):
     query = do_get_user_input("Enter channel to search for: ")
     querying = True
     while querying:
@@ -1099,7 +1099,6 @@ def do_interactive_channel_subscribe(runtime_constants, circuit_manager=None):
                         do_channel_subscribe,
                         result=result,
                         circuit_manager=circuit_manager,
-                        runtime_constants=runtime_constants,
                     )
                     for result in result_list
                 ]
@@ -1124,8 +1123,8 @@ def do_interactive_channel_subscribe(runtime_constants, circuit_manager=None):
 
 # this is the application level flow entered when the user has chosen a channel that it
 # wants to subscribe to
-def do_channel_subscribe(result, circuit_manager, runtime_constants):
-    database = do_wait_screen("", parse_database_file, DATABASE_PATH)
+def do_channel_subscribe(result, circuit_manager):
+    database = do_wait_screen("", parse_database_file, CONFIG.DATABASE_PATH)
     refreshing = True
     if result.channel_id in database["feeds"]:
         do_notify("Already subscribed to this channel!")
@@ -1136,7 +1135,6 @@ def do_channel_subscribe(result, circuit_manager, runtime_constants):
                 f"getting data from feed for {result.title}...",
                 add_subscription_to_database,
                 result.channel_id,
-                runtime_constants,
                 result.title,
                 refresh=True,
                 circuit_manager=circuit_manager,
@@ -1154,7 +1152,7 @@ def do_channel_subscribe(result, circuit_manager, runtime_constants):
 # this is the application level flow entered when the user has chosen to unsubscribe to
 # a channel
 def do_interactive_channel_unsubscribe():
-    database = do_wait_screen("", parse_database_file, DATABASE_PATH)
+    database = do_wait_screen("", parse_database_file, CONFIG.DATABASE_PATH)
     if not database["title to id"]:
         do_notify("You are not subscribed to any channels")
         return
@@ -1169,18 +1167,18 @@ def do_interactive_channel_unsubscribe():
 # this is the application level flow entered when the user has chosen a channel that it
 # wants to unsubscribe from
 def do_channel_unsubscribe(channel_title):
-    database = do_wait_screen("", parse_database_file, DATABASE_PATH)
-    if USE_THUMBNAILS:
+    database = do_wait_screen("", parse_database_file, CONFIG.DATABASE_PATH)
+    if CONFIG.USE_THUMBNAILS:
         delete_thumbnails_by_channel_title(database, channel_title)
     remove_subscription_from_database_by_channel_title(database, channel_title)
-    output_database_to_file(database, DATABASE_PATH)
+    output_database_to_file(database, CONFIG.DATABASE_PATH)
     return ReturnFromMenu
 
 
 # this is the application level flow entered when the user has chosen to browse
 # its current subscriptions
 def do_interactive_browse_subscriptions(circuit_manager):
-    database = do_wait_screen("", parse_database_file, DATABASE_PATH)
+    database = do_wait_screen("", parse_database_file, CONFIG.DATABASE_PATH)
     menu_options = [
         MethodMenuDecision(
             FeedDescriber(
@@ -1229,12 +1227,12 @@ def do_select_video_from_subscription(database, channel_title, circuit_manager):
     ]
 
     adhoc_keys = [MarkEntryAsReadKey(video, i + 1) for i, video in enumerate(videos)]
-    output_database_to_file(database, DATABASE_PATH)
+    output_database_to_file(database, CONFIG.DATABASE_PATH)
     menu_options.insert(0, MethodMenuDecision("[Go back]", do_return_from_menu))
     do_method_menu(
         "Which video do you want to watch?", menu_options, adhoc_keys=adhoc_keys
     )
-    output_database_to_file(database, DATABASE_PATH)
+    output_database_to_file(database, CONFIG.DATABASE_PATH)
 
 
 # this is the application level flow entered when the user has selected a video to watch
@@ -1243,7 +1241,7 @@ def do_play_video_from_subscription(database, video, circuit_manager):
     result = play_video(video["link"], circuit_manager=circuit_manager)
     if not video["seen"]:
         video["seen"] = result
-        output_database_to_file(database, DATABASE_PATH)
+        output_database_to_file(database, CONFIG.DATABASE_PATH)
 
 
 # this is the application level flow entered when the user is watching any video from
@@ -1271,8 +1269,8 @@ def play_video(video_url, circuit_manager=None):
 
 # this is the application level flow entered when the user has chosen to refresh its
 # subscriptions
-def do_refresh_subscriptions(runtime_constants, circuit_manager=None):
-    database = do_wait_screen("", parse_database_file, DATABASE_PATH)
+def do_refresh_subscriptions(circuit_manager=None):
+    database = do_wait_screen("", parse_database_file, CONFIG.DATABASE_PATH)
     channel_id_list = list(database["id to title"])
     refreshing = True
     while refreshing:
@@ -1281,7 +1279,6 @@ def do_refresh_subscriptions(runtime_constants, circuit_manager=None):
                 "refreshing subscriptions...",
                 refresh_subscriptions_by_channel_id,
                 channel_id_list,
-                runtime_constants,
                 circuit_manager=circuit_manager,
             )
             refreshing = False
@@ -1290,18 +1287,16 @@ def do_refresh_subscriptions(runtime_constants, circuit_manager=None):
                 refreshing = False
 
 
-def do_main_menu(runtime_constants, circuit_manager=None):
+def do_main_menu(circuit_manager=None):
     menu_options = [
         MethodMenuDecision(
             "Search for video",
             do_interactive_search_for_video,
-            runtime_constants,
             circuit_manager=circuit_manager,
         ),
         MethodMenuDecision(
             "Refresh subscriptions",
             do_refresh_subscriptions,
-            runtime_constants,
             circuit_manager=circuit_manager,
         ),
         MethodMenuDecision(
@@ -1312,7 +1307,6 @@ def do_main_menu(runtime_constants, circuit_manager=None):
         MethodMenuDecision(
             "Subscribe to new channel",
             do_interactive_channel_subscribe,
-            runtime_constants,
             circuit_manager=circuit_manager,
         ),
         MethodMenuDecision(
@@ -1322,7 +1316,6 @@ def do_main_menu(runtime_constants, circuit_manager=None):
         MethodMenuDecision("Quit", do_return_from_menu),
     ]
     do_method_menu("What do you want to do?", menu_options)
-    return ReturnFromMenu
 
 
 # this is a function for managing menu hierarchies; once called, a menu presents
@@ -1363,8 +1356,6 @@ def do_return_from_menu():
 
 
 def main():
-    global USE_THUMBNAILS
-
     flags = command_line_parser.read_flags(sys.argv)
     for flag in flags:
         if flag not in command_line_parser.allowedFlags:
@@ -1373,35 +1364,22 @@ def main():
     if "use-thumbnails" in flags:
         flag = flags[flags.index("use-thumbnails")]
         flag.treated = True
-        USE_THUMBNAILS = True
+        CONFIG.USE_THUMBNAILS = True
 
     for flag in flags:
         if not flag.treated:
             raise command_line_parser.CommandLineParseError
 
-    runtime_constants = {
-        "USE_THUMBNAILS": USE_THUMBNAILS,
-        "HOME": HOME,
-        "YOUTUBE_RSS_DIR": YOUTUBE_RSS_DIR,
-        "THUMBNAIL_DIR": THUMBNAIL_DIR,
-        "THUMBNAIL_SEARCH_DIR": THUMBNAIL_SEARCH_DIR,
-        "DATABASE_PATH": DATABASE_PATH,
-        "LOG_PATH": LOG_PATH,
-        "HIGHLIGHTED": HIGHLIGHTED,
-        "NOT_HIGHLIGHTED": NOT_HIGHLIGHTED,
-        "ANY_INDEX": ANY_INDEX,
-    }
+    CONFIG.YOUTUBE_RSS_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG.THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
 
-    YOUTUBE_RSS_DIR.mkdir(parents=True, exist_ok=True)
-    THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
-
-    if not os.path.isfile(DATABASE_PATH):
+    if not CONFIG.DATABASE_PATH.is_file():
         database = initiate_youtube_rss_database()
-        do_wait_screen("", output_database_to_file, database, DATABASE_PATH)
+        do_wait_screen("", output_database_to_file, database, CONFIG.DATABASE_PATH)
     else:
-        database = do_wait_screen("", parse_database_file, DATABASE_PATH)
+        database = do_wait_screen("", parse_database_file, CONFIG.DATABASE_PATH)
 
-    do_main_menu(runtime_constants)
+    do_main_menu()
     os.kill(os.getpid(), signal.SIGTERM)
 
 
