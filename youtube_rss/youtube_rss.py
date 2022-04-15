@@ -7,6 +7,7 @@ import urllib.parse
 from html.parser import HTMLParser
 from multiprocessing import Process, ProcessError
 from pathlib import Path
+from typing import List
 
 import feedparser
 import requests
@@ -156,14 +157,14 @@ class MethodMenuDecision:
 
 
 class FeedVideoDescriber:
-    def __init__(self, video):
+    def __init__(self, video: db.FeedEntry):
         self.video = video
 
     def __str__(self):
-        return self.video["title"] + (" (unseen!)" if not self.video["seen"] else "")
+        return self.video.title + (" (unseen!)" if not self.video.seen else "")
 
     def get_thumbnail(self):
-        return self.video["thumbnail file"]
+        return self.video.thumbnail
 
 
 class VideoQueryObjectDescriber:
@@ -175,24 +176,6 @@ class VideoQueryObjectDescriber:
 
     def get_thumbnail(self):
         return CONFIG.THUMBNAIL_SEARCH_DIR / self.video_query_object.video_id + ".jpg"
-
-
-class FeedDescriber:
-    def __init__(self, feed, channel_title):
-        self.feed = feed
-        self.channel_title = channel_title
-
-    def __str__(self):
-        return "".join(
-            (
-                self.channel_title,
-                ": (",
-                str(sum(1 for video in self.feed if not video["seen"])),
-                "/",
-                str(len(self.feed)),
-                ")",
-            )
-        )
 
 
 class AdHocKey:
@@ -234,13 +217,17 @@ class MarkAllAsReadKey(AdHocKey):
 
 
 class MarkEntryAsReadKey(AdHocKey):
-    def __init__(self, video, activation_index, key=ord("a")):
+    def __init__(self, video: db.FeedEntry, activation_index, key=ord("a")):
         item = MethodMenuDecision(
             "mark video as read",
-            lambda video: video.update({"seen": (not video["seen"])}),
+            self._mark_read,
             video,
         )
         super().__init__(key=key, item=item, activation_index=activation_index)
+
+    @staticmethod
+    def _mark_read(video: db.FeedEntry) -> None:
+        video.seen = True
 
 
 #############
@@ -339,17 +326,21 @@ def get_rss_entries_from_channel_id(channel_id, circuit_manager=None):
 
 # use this function to add a subscription to the database
 def add_subscription_to_database(
-    channel_id, channel_title, refresh=False, circuit_manager=None
-):
-    database = db.Database.from_json(CONFIG.DATABASE_PATH)
-    database["feeds"][channel_id] = []
-    database["id to title"][channel_id] = channel_title
-    database["title to id"][channel_title] = channel_id
-    database.to_json(CONFIG.DATABASE_PATH)
+    channel_id: str, channel_title: str, refresh: bool = False, circuit_manager=None
+) -> None:
+    database = CONFIG.get_database()
+    feed = database.fetch_one_or_none(db.Feed, channel_id=channel_id)
+    new_feed = db.Feed(channel_id=channel_id, title=channel_title, entries=[])
+    if feed is None:
+        database.add(new_feed)
+        feed = new_feed
+    else:
+        feed.update(new_feed)
+
+    database.save()
+
     if refresh:
-        refresh_subscriptions_by_channel_id(
-            [channel_id], circuit_manager=circuit_manager
-        )
+        refresh_subscriptions_by_channel_id([feed], circuit_manager=circuit_manager)
 
 
 def delete_thumbnails_by_channel_title(database, channel_title):
@@ -368,31 +359,12 @@ def delete_thumbnails_by_channel_id(database, channel_id):
         Path(entry["thumbnail file"]).unlink(missing_ok=True)
 
 
-# use this function to remove a subscription from the database by channel title
-def remove_subscription_from_database_by_channel_title(database, channel_title):
-    if channel_title not in database["title to id"]:
-        return
-    channel_id = database["title to id"][channel_title]
-    remove_subscription_from_database_by_channel_id(database, channel_id)
-    return
-
-
-# use this function to remove a subscription from the database by channel ID
-def remove_subscription_from_database_by_channel_id(database, channel_id):
-    if channel_id not in database["id to title"]:
-        return
-    channel_title = database["id to title"].pop(channel_id)
-    database["title to id"].pop(channel_title)
-    database["feeds"].pop(channel_id)
-    database.to_json(CONFIG.DATABASE_PATH)
-
-
 # use this function to retrieve new RSS entries for a subscription and add them to
 # a database
-def refresh_subscriptions_by_channel_id(channel_id_list, circuit_manager=None):
+def refresh_subscriptions_by_channel_id(feeds: List[db.Feed], circuit_manager=None):
     process = Process(
         target=refresh_subscriptions_by_channel_id_process,
-        args=(channel_id_list,),
+        args=(feeds,),
         kwargs={"circuit_manager": circuit_manager},
     )
     try:
@@ -403,57 +375,56 @@ def refresh_subscriptions_by_channel_id(channel_id_list, circuit_manager=None):
         process.kill()
         raise e
     if process.exitcode != 0:
-        raise ProcessError
+        raise ProcessError("Non-zero exit code")
 
 
-def refresh_subscriptions_by_channel_id_process(channel_id_list, circuit_manager=None):
-    database = db.Database.from_json(CONFIG.DATABASE_PATH)
-    local_feeds = database["feeds"]
+def refresh_subscriptions_by_channel_id_process(
+    feeds: List[db.Feed], circuit_manager=None
+):
+    database = CONFIG.get_database()
     threads = []
-    for channel_id in channel_id_list:
-        local_feed = local_feeds[channel_id]
+
+    for feed in feeds:
+        feed_ = database.fetch_one_or_none(db.Feed, channel_id=feed.channel_id)
+        if feed_ is None:
+            continue
+
         thread = utils.ErrorCatchingThread(
             refresh_subscription_by_channel_id,
-            channel_id,
-            local_feed,
+            feed_,
             circuit_manager=circuit_manager,
         )
         threads.append(thread)
         thread.start()
+
     for thread in threads:
         thread.join()
+
     if CONFIG.USE_THUMBNAILS:
         get_thumbnails_for_all_subscriptions(
-            channel_id_list, database, circuit_manager=circuit_manager
+            feeds, database, circuit_manager=circuit_manager
         )
 
-    database.to_json(CONFIG.DATABASE_PATH)
+    database.save()
 
 
-def refresh_subscription_by_channel_id(channel_id, local_feed, circuit_manager=None):
+def refresh_subscription_by_channel_id(feed: db.Feed, circuit_manager=None):
     remote_feed = get_rss_entries_from_channel_id(
-        channel_id, circuit_manager=circuit_manager
+        feed.channel_id, circuit_manager=circuit_manager
     )
     if remote_feed is not None:
         remote_feed.reverse()
-        for entry in remote_feed:
-            filtered_entry = get_relevant_dict_from_feed_parser_dict(entry)
+        for remote_entry in remote_feed:
+            filtered_entry = get_relevant_dict_from_feed_parser_dict(remote_entry)
 
-            filtered_entry_is_new = True
-            for i, local_entry in enumerate(local_feed):
-                if local_entry["id"] == filtered_entry["id"]:
-                    filtered_entry_is_new = False
+            for entry in feed.entries:
+                if entry.video_id == filtered_entry.video_id:
                     # in case any relevant data about the entry is changed, update it
-                    filtered_entry["seen"] = local_entry["seen"]
-                    if (
-                        filtered_entry["thumbnail"] == local_entry["thumbnail"]
-                        and "thumbnail file" in filtered_entry
-                    ):
-                        filtered_entry["thumbnail file"] = local_entry["thumbnail file"]
-                    local_feed[i] = filtered_entry
+                    filtered_entry.seen = entry.seen
+                    entry.update(filtered_entry)
                     break
-            if filtered_entry_is_new:
-                local_feed.insert(0, filtered_entry)
+            else:
+                feed.entries.insert(0, filtered_entry)
 
 
 # use this function to open a YouTube video url in mpv
@@ -485,15 +456,14 @@ def open_url_in_mpv(url, max_resolution=1080, circuit_manager=None):
 
 # use this function to get the data we care about from the entries found by the
 # RSS parser
-def get_relevant_dict_from_feed_parser_dict(feedparser_dict):
-    output_dict = {
-        "id": feedparser_dict["id"],
-        "link": feedparser_dict["link"],
-        "title": feedparser_dict["title"],
-        "thumbnail": feedparser_dict["media_thumbnail"][0]["url"],
-        "seen": False,
-    }
-    return output_dict
+def get_relevant_dict_from_feed_parser_dict(feedparser_dict) -> db.FeedEntry:
+    return db.FeedEntry(
+        video_id=feedparser_dict["id"],
+        link=feedparser_dict["link"],
+        title=feedparser_dict["title"],
+        thumbnail=feedparser_dict["media_thumbnail"][0]["url"],
+        seen=False,
+    )
 
 
 """
@@ -652,13 +622,14 @@ def do_interactive_channel_subscribe(circuit_manager=None):
 
 # this is the application level flow entered when the user has chosen a channel that it
 # wants to subscribe to
-def do_channel_subscribe(result, circuit_manager):
-    database = tui.wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
-    refreshing = True
-    if result.channel_id in database["feeds"]:
+def do_channel_subscribe(result: ChannelQueryObject, circuit_manager):
+    database: db.IDatabase = tui.wait_screen("", CONFIG.get_database)
+
+    if database.fetch(db.Feed, channel_id=result.channel_id):
         tui.notify("Already subscribed to this channel!")
         return
-    while refreshing:
+
+    while True:
         try:
             tui.wait_screen(
                 f"getting data from feed for {result.title}...",
@@ -668,14 +639,14 @@ def do_channel_subscribe(result, circuit_manager):
                 refresh=True,
                 circuit_manager=circuit_manager,
             )
-            refreshing = False
+            break
         except requests.exceptions.ConnectionError as e:
             logger.error(e)
             if not tui.yes_no_query(
                 "Something went wrong with the " + "connection. Try again?"
             ):
-                do_channel_unsubscribe(result.title)
-                refreshing = False
+                do_channel_unsubscribe(result.channel_id)
+                break
 
     return tui.ReturnFromMenu
 
@@ -683,13 +654,13 @@ def do_channel_subscribe(result, circuit_manager):
 # this is the application level flow entered when the user has chosen to unsubscribe to
 # a channel
 def do_interactive_channel_unsubscribe():
-    database = tui.wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
-    if not database["title to id"]:
+    database: db.IDatabase = tui.wait_screen("", CONFIG.get_database)
+    if not database.fetch_first(db.Feed):
         tui.notify("You are not subscribed to any channels")
         return
     menu_options = [
-        MethodMenuDecision(channel_title, do_channel_unsubscribe, channel_title)
-        for channel_title in database["title to id"]
+        MethodMenuDecision(feed.title, do_channel_unsubscribe, feed.channel_id)
+        for feed in database.fetch_all(db.Feed)
     ]
     menu_options.insert(0, MethodMenuDecision("[Go back]", do_return_from_menu))
     do_method_menu("Which channel do you want to unsubscribe from?", menu_options)
@@ -697,35 +668,46 @@ def do_interactive_channel_unsubscribe():
 
 # this is the application level flow entered when the user has chosen a channel that it
 # wants to unsubscribe from
-def do_channel_unsubscribe(channel_title):
-    database = tui.wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
+def do_channel_unsubscribe(channel_id):
+    database = tui.wait_screen("", CONFIG.get_database)
+    database.remove(db.Feed, channel_id=channel_id)
     if CONFIG.USE_THUMBNAILS:
-        delete_thumbnails_by_channel_title(database, channel_title)
-    remove_subscription_from_database_by_channel_title(database, channel_title)
-    database.to_json(CONFIG.DATABASE_PATH)
+        delete_thumbnails_by_channel_title(database, channel_id)
+    database.save()
     return tui.ReturnFromMenu
+
+
+def describe_feed(feed: db.Feed) -> str:
+    return "".join(
+        (
+            feed.title,
+            ": (",
+            str(sum(1 for entry in feed.entries if not entry.seen)),
+            "/",
+            str(len(feed.entries)),
+            ")",
+        )
+    )
 
 
 # this is the application level flow entered when the user has chosen to browse
 # its current subscriptions
 def do_interactive_browse_subscriptions(circuit_manager):
-    database = tui.wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
+    database: db.IDatabase = tui.wait_screen("", CONFIG.get_database)
     menu_options = [
         MethodMenuDecision(
-            FeedDescriber(
-                database["feeds"][database["title to id"][channel_title]], channel_title
-            ),
+            describe_feed(feed),
             do_select_video_from_subscription,
             database,
-            channel_title,
+            feed.channel_id,
             circuit_manager,
         )
-        for channel_title in database["title to id"]
+        for feed in database.fetch_all(db.Feed)
     ]
 
     adhoc_keys = [
         MarkAllAsReadKey(channel_id, i + 1, database)
-        for i, channel_id in enumerate(database["feeds"])
+        for i, channel_id in enumerate(database.fetch_all(db.Feed))
     ]
 
     if not menu_options:
@@ -743,36 +725,44 @@ def do_interactive_browse_subscriptions(circuit_manager):
 # this is the application level flow entered when the user has chosen a channel while
 # browsing its current subscriptions;
 # the user now gets to select a video from the channel to watch
-def do_select_video_from_subscription(database, channel_title, circuit_manager):
-    channel_id = database["title to id"][channel_title]
-    videos = database["feeds"][channel_id]
+def do_select_video_from_subscription(
+    database: db.IDatabase, channel_id, circuit_manager
+):
+    feed = database.fetch_one_or_none(db.Feed, channel_id=channel_id)
+    if feed is None:
+        raise ValueError("Feed not found")
+
     menu_options = [
         MethodMenuDecision(
-            FeedVideoDescriber(video),
+            FeedVideoDescriber(entry),
             do_play_video_from_subscription,
             database,
-            video,
+            entry,
             circuit_manager,
         )
-        for video in videos
+        for entry in feed.entries
     ]
 
-    adhoc_keys = [MarkEntryAsReadKey(video, i + 1) for i, video in enumerate(videos)]
-    database.to_json(CONFIG.DATABASE_PATH)
+    adhoc_keys = [
+        MarkEntryAsReadKey(video, i + 1) for i, video in enumerate(feed.entries)
+    ]
+    database.save()
     menu_options.insert(0, MethodMenuDecision("[Go back]", do_return_from_menu))
     do_method_menu(
         "Which video do you want to watch?", menu_options, adhoc_keys=adhoc_keys
     )
-    database.to_json(CONFIG.DATABASE_PATH)
+    database.save()
 
 
 # this is the application level flow entered when the user has selected a video to watch
 # while browsing its current subscriptions
-def do_play_video_from_subscription(database, video, circuit_manager):
-    result = play_video(video["link"], circuit_manager=circuit_manager)
-    if not video["seen"]:
-        video["seen"] = result
-        database.to_json(CONFIG.DATABASE_PATH)
+def do_play_video_from_subscription(
+    database: db.IDatabase, video: db.FeedEntry, circuit_manager
+):
+    result = play_video(video.link, circuit_manager=circuit_manager)
+    if not video.seen:
+        video.seen = result
+        database.save()
 
 
 # this is the application level flow entered when the user is watching any video from
@@ -801,22 +791,22 @@ def play_video(video_url, circuit_manager=None):
 # this is the application level flow entered when the user has chosen to refresh its
 # subscriptions
 def do_refresh_subscriptions(circuit_manager=None):
-    database = tui.wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
-    channel_id_list = list(database["id to title"])
-    refreshing = True
-    while refreshing:
+    database: db.IDatabase = tui.wait_screen("", CONFIG.get_database)
+    feeds = database.fetch_all(db.Feed)
+    while True:
         try:
             tui.wait_screen(
                 "refreshing subscriptions...",
                 refresh_subscriptions_by_channel_id,
-                channel_id_list,
+                feeds,
                 circuit_manager=circuit_manager,
             )
-            refreshing = False
+            break
         except ProcessError as e:
+            logger.error("Failed to refresh subscriptions")
             logger.error(e)
             if not tui.yes_no_query("Something went wrong. Try again?"):
-                refreshing = False
+                break
 
 
 def do_main_menu(circuit_manager=None):

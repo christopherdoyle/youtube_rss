@@ -1,5 +1,10 @@
+import logging
 import os
 from pathlib import Path
+
+from . import db
+
+logger = logging.getLogger("youtube_rss.config")
 
 
 def get_app_data_directory() -> Path:
@@ -32,6 +37,16 @@ class Config:
         self.YOUTUBE_RSS_DIR.mkdir(parents=True, exist_ok=True)
         self.THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
         self.THUMBNAIL_SEARCH_DIR.mkdir(parents=True, exist_ok=True)
+
+    def get_database(self) -> db.IDatabase:
+        database = db.JsonDatabase({}, self.DATABASE_PATH)
+        if not CONFIG.DATABASE_PATH.is_file():
+            logger.info("Initializing new database")
+            database.new()
+        else:
+            database.connect()
+
+        return database
 
 
 CONFIG = Config()

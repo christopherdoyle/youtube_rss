@@ -3,7 +3,7 @@ import os
 import signal
 import sys
 
-from . import command_line_parser, db, tui, utils, youtube_rss
+from . import command_line_parser, tui, utils, youtube_rss
 from .config import CONFIG
 
 logger = logging.getLogger("youtube_rss")
@@ -34,13 +34,7 @@ def main():
         if not flag.treated:
             raise command_line_parser.CommandLineParseError
 
-    if not CONFIG.DATABASE_PATH.is_file():
-        logger.info("Initializing new database")
-        database = db.initialize_database()
-        tui.wait_screen("", database.to_json, CONFIG.DATABASE_PATH)
-    else:
-        tui.wait_screen("", db.Database.from_json, CONFIG.DATABASE_PATH)
-
+    tui.wait_screen("", CONFIG.get_database)
     youtube_rss.do_main_menu()
     logger.info("Program end")
     os.kill(os.getpid(), signal.SIGTERM)
