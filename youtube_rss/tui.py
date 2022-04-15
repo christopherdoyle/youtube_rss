@@ -1,5 +1,6 @@
+import contextlib
 import curses
-from abc import ABC
+import enum
 
 from .config import CONFIG
 
@@ -12,59 +13,14 @@ except ImportError:
 class UnknownQueryStyle(Exception):
     """Indicates that the provided query style is not supported."""
 
-    pass
+
+RETURN_FROM_MENU = object()
 
 
-class InstantiateIndicatorClassError(Exception):
-    def __init__(self, message="Can't instantiate an indicator class!"):
-        self.message = message
-        super().__init__(message)
-
-
-class IndicatorClass(ABC):
-    """Parent to all indicator classes."""
-
-    pass
-
-
-class NoCanvas(IndicatorClass):
-    def __exit__(self, dummy1, dummy2, dummy3):
-        pass
-
-    def __enter__(self):
-        pass
-
-
-class ReturnFromMenu(IndicatorClass):
-    """Returned from menu method to indicate that application flow should step
-    closer to the root menu.
-    """
-
-    pass
-
-
-class QueryStyle(IndicatorClass):
-    """Indicates whether selection query should return by index, item or both."""
-
-    pass
-
-
-class IndexQuery(QueryStyle):
-    """Indicates that selection query should return by index."""
-
-    pass
-
-
-class ItemQuery(QueryStyle):
-    """Indicates that selection query should return by item."""
-
-    pass
-
-
-class CombinedQuery(QueryStyle):
-    """Indicates that selection query should return by both item and index."""
-
-    pass
+class QueryStyle(enum.Enum):
+    INDEX_QUERY_STYLE = 0
+    ITEM_QUERY_STYLE = 1
+    COMBINED_QUERY_STYLE = 2
 
 
 def wait_screen(message, wait_function, *args, **kwargs):
@@ -101,7 +57,7 @@ def _yes_no_query_ncurses(stdscr, query):
 def select_query(
     query,
     options,
-    query_style=ItemQuery,
+    query_style=QueryStyle.ITEM_QUERY_STYLE,
     initial_index=None,
     show_item_number=True,
     adhoc_keys=None,
@@ -122,7 +78,7 @@ def _select_query_ncurses(
     stdscr,
     query,
     options,
-    query_style=ItemQuery,
+    query_style=QueryStyle.ITEM_QUERY_STYLE,
     initial_index=None,
     show_item_number=True,
     adhoc_keys=None,
@@ -138,8 +94,11 @@ def _select_query_ncurses(
         choice_index = initial_index
     else:
         choice_index = 0
+
     while True:
-        with (ueberzug.Canvas() if CONFIG.USE_THUMBNAILS else NoCanvas()) as canvas:
+        with (
+            ueberzug.Canvas() if CONFIG.USE_THUMBNAILS else contextlib.suppress()
+        ) as canvas:
             print_menu(
                 query,
                 options,
@@ -155,11 +114,11 @@ def _select_query_ncurses(
             if key in (adhoc_keys or []):
                 for adhoc_key in adhoc_keys or []:
                     if adhoc_key.is_valid_index(choice_index):
-                        if query_style is ItemQuery:
+                        if query_style is QueryStyle.ITEM_QUERY_STYLE:
                             return adhoc_key.item
-                        elif query_style is IndexQuery:
+                        elif query_style is QueryStyle.INDEX_QUERY_STYLE:
                             return choice_index
-                        elif query_style is CombinedQuery:
+                        elif query_style is QueryStyle.COMBINED_QUERY_STYLE:
                             return adhoc_key.item, choice_index
 
             elif key in (curses.KEY_UP, ord("k")):
@@ -187,14 +146,14 @@ def _select_query_ncurses(
                     jump_num = int("".join(jump_num_list))
                     choice_index = min(jump_num - 1, len(options) - 1)
                     jump_num_list = []
-                elif query_style is ItemQuery:
+                elif query_style is QueryStyle.ITEM_QUERY_STYLE:
                     return options[choice_index]
-                elif query_style is IndexQuery:
+                elif query_style is QueryStyle.INDEX_QUERY_STYLE:
                     return choice_index
-                elif query_style is CombinedQuery:
+                elif query_style is QueryStyle.COMBINED_QUERY_STYLE:
                     return options[choice_index], choice_index
                 else:
-                    raise UnknownQueryStyle
+                    raise UnknownQueryStyle(query_style)
 
 
 def notify(message):
@@ -270,8 +229,6 @@ def print_menu(
     no application level menu is presented, i.e. by simply not providing a query
     and no menu objects).
     """
-    if canvas is None:
-        canvas = NoCanvas()
     stdscr.clear()
     height, width = stdscr.getmaxyx()
     screen_center_x = width // 2
@@ -326,7 +283,7 @@ def print_menu(
             i == choice_index
             and hasattr(item, "description")
             and hasattr(item.description, "getThumbnail")
-            and type(canvas) is not NoCanvas
+            and canvas is not None
         ):
             thumbnail_width = item_x - 1
             thumbnail_height = height - 3

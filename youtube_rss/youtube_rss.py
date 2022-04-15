@@ -333,7 +333,7 @@ def do_channel_subscribe(result: parser.ChannelQueryObject):
                 do_channel_unsubscribe(result.channel_id)
                 break
 
-    return tui.ReturnFromMenu
+    return tui.RETURN_FROM_MENU
 
 
 # this is the application level flow entered when the user has chosen to unsubscribe to
@@ -359,7 +359,7 @@ def do_channel_unsubscribe(channel_id):
     if CONFIG.USE_THUMBNAILS:
         delete_thumbnails_by_channel_title(database, channel_id)
     database.save()
-    return tui.ReturnFromMenu
+    return tui.RETURN_FROM_MENU
 
 
 def describe_feed(feed: db.Feed) -> str:
@@ -528,7 +528,7 @@ def do_method_menu(query, menu_options, show_item_number=True, adhoc_keys=None):
                 query,
                 menu_options,
                 initial_index=index,
-                query_style=tui.CombinedQuery,
+                query_style=tui.QueryStyle.COMBINED_QUERY_STYLE,
                 show_item_number=show_item_number,
                 adhoc_keys=adhoc_keys or [],
             )
@@ -536,7 +536,7 @@ def do_method_menu(query, menu_options, show_item_number=True, adhoc_keys=None):
                 result = method_menu_decision.execute_decision()
             except KeyboardInterrupt:
                 result = None
-            if result is tui.ReturnFromMenu:
+            if result is tui.RETURN_FROM_MENU:
                 return
     except KeyboardInterrupt:
         return
@@ -545,4 +545,4 @@ def do_method_menu(query, menu_options, show_item_number=True, adhoc_keys=None):
 # this function is an application level flow which when selected from a method
 # menu simply returns to the preceding menu (one step closer to the root menu)
 def do_return_from_menu():
-    return tui.ReturnFromMenu
+    return tui.RETURN_FROM_MENU
