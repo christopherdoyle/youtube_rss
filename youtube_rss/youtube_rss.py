@@ -1,142 +1,15 @@
 import logging
-import re
 import shutil
-import subprocess
-import urllib
-import urllib.parse
-from html.parser import HTMLParser
 from multiprocessing import Process, ProcessError
 from pathlib import Path
 from typing import List
 
-import feedparser
 import requests
 
-from . import db, tui, utils
+from . import db, output, parser, tui, utils
 from .config import CONFIG
 
 logger = logging.getLogger("youtube_rss")
-
-###########
-# classes #
-###########
-
-"""
-Parser classes
-"""
-
-
-# Parser used for extracting an RSS Address from channel page HTML
-class RssAddressParser(HTMLParser):
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.rss_address = None
-
-    def handle_starttag(self, tag, attrs):
-        attr_dict = dict(attrs)
-        if "type" in attr_dict and attr_dict["type"] == "application/rss+xml":
-            self.rss_address = attr_dict["href"]
-
-
-# Parser used for extracting information about channels from YouTube channel query HTML
-class ChannelQueryParser(HTMLParser):
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.is_script_tag = False
-        self.result_list = None
-
-    def handle_starttag(self, tag, attrs):
-        if tag == "script":
-            self.is_script_tag = True
-
-    def handle_data(self, data):
-        if self.is_script_tag:
-            self.is_script_tag = False
-            if "var ytInitialData" in data:
-                pattern = re.compile(
-                    # fmt: off
-                    r'"channelRenderer":\{'
-                    r'"channelId":"([^"]+)",'
-                    r'"title":\{"simpleText":"([^"]+)"'
-                    # fmt: on
-                )
-                tuple_list = pattern.findall(data)
-                result_list = []
-                for tup in tuple_list:
-                    result_list.append(
-                        ChannelQueryObject(channel_id=tup[0], title=tup[1])
-                    )
-                self.result_list = result_list
-
-
-# Parser used for extracting information about channels from YouTube channel query HTML
-class VideoQueryParser(HTMLParser):
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.is_script_tag = False
-        self.result_list = None
-
-    def handle_starttag(self, tag, attrs):
-        if tag == "script":
-            self.is_script_tag = True
-
-    def handle_data(self, data):
-        if self.is_script_tag:
-            self.is_script_tag = False
-            if "var ytInitialData" in data:
-                # fmt: off
-                pattern = re.compile(
-                    r'videoId":"([^"]+)",'
-                    r'"thumbnail":'
-                    r'{"thumbnails":\['
-                    r'\{"url":"([^"]+)","width":[0-9]+,"height":[0-9]+\},'
-                    r'\{"url":"[^"]+","width":[0-9]+,"height":[0-9]+\}'
-                    r'\]\},'
-                    r'"title":\{'
-                    r'"runs":\[\{"text":"[^"]+"\}\],'
-                    r'"accessibility":\{"accessibilityData":\{"label":"([^"]+)"'
-                    r'\}'
-                )
-                # fmt: on
-                tuple_list = pattern.findall(data)
-                result_list = []
-                for tup in tuple_list:
-                    result_list.append(
-                        VideoQueryObject(
-                            video_id=tup[0], thumbnail=tup[1], title=tup[2]
-                        )
-                    )
-                self.result_list = result_list
-
-
-"""
-Other classes
-"""
-
-
-# contains information from one result item from video query
-class VideoQueryObject:
-    def __init__(self, video_id=None, thumbnail=None, title=None):
-        self.video_id = video_id
-        self.thumbnail = thumbnail
-        self.title = title
-        if video_id is not None:
-            self.url = f"https://youtube.com/watch?v={video_id}"
-        else:
-            self.url = None
-
-    def __str__(self):
-        return f"{self.title}"
-
-
-# contains information from one result item from channel query
-class ChannelQueryObject:
-    def __init__(self, channel_id=None, title=None):
-        self.channel_id = channel_id
-        self.title = title
-
-    def __str__(self):
-        return f"{self.title}  --  (channel ID {self.channel_id})"
 
 
 # item of the sort provided in list to do_method_menu; it is provided a
@@ -154,28 +27,6 @@ class MethodMenuDecision:
 
     def execute_decision(self):
         return self.function(*self.args, **self.kwargs)
-
-
-class FeedVideoDescriber:
-    def __init__(self, video: db.FeedEntry):
-        self.video = video
-
-    def __str__(self):
-        return self.video.title + (" (unseen!)" if not self.video.seen else "")
-
-    def get_thumbnail(self):
-        return self.video.thumbnail
-
-
-class VideoQueryObjectDescriber:
-    def __init__(self, video_query_object):
-        self.video_query_object = video_query_object
-
-    def __str__(self):
-        return self.video_query_object.title
-
-    def get_thumbnail(self):
-        return CONFIG.THUMBNAIL_SEARCH_DIR / self.video_query_object.video_id + ".jpg"
 
 
 class AdHocKey:
@@ -228,100 +79,6 @@ class MarkEntryAsReadKey(AdHocKey):
     @staticmethod
     def _mark_read(video: db.FeedEntry) -> None:
         video.seen = True
-
-
-#############
-# functions #
-#############
-
-"""
-Functions for retreiving and processing network data
-"""
-
-
-# use this function to make HTTP requests without using Tor
-def unproxied_get_http_content(url, session=None, method="GET", post_payload=None):
-    if session is None:
-        if method == "GET":
-            return requests.get(url)
-        elif method == "POST":
-            return requests.post(url, post_payload or {})
-    else:
-        if method == "GET":
-            return session.get(url)
-        elif method == "POST":
-            return session.post(url, post_payload or {})
-
-
-# use this function to get content (typically hypertext or xml) using HTTP from YouTube
-def get_http_content(url, circuit_manager=None, auth=None):
-    session = requests.Session()
-    session.headers["Accept-Language"] = "en-US"
-    # This cookie lets us avoid the YouTube consent page
-    session.cookies["CONSENT"] = "YES+"
-    response = unproxied_get_http_content(url, session=session)
-
-    return response
-
-
-# if you have a channel id, you can use this function to get the rss address
-def get_rss_address_from_channel_id(channel_id):
-    return f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-
-
-# use this function to get a list of query results from searching for a channel
-# results are of the type ChannelQueryObject
-def get_channel_query_results(query, circuit_manager=None):
-    url = (
-        "https://youtube.com/results?search_query="
-        + urllib.parse.quote(query)
-        + "&sp=EgIQAg%253D%253D"
-    )
-    html_content = get_http_content(url, circuit_manager=circuit_manager).text
-    parser = ChannelQueryParser()
-    parser.feed(html_content)
-    return parser.result_list
-
-
-# use this function to get a list of query results from searching for a video
-# results are of the type VideoQueryObject
-def get_video_query_results(query, circuit_manager=None):
-    url = (
-        "https://youtube.com/results?search_query="
-        + urllib.parse.quote(query)
-        + "&sp=EgIQAQ%253D%253D"
-    )
-    html_content = get_http_content(url, circuit_manager=circuit_manager).text
-    parser = VideoQueryParser()
-    parser.feed(html_content)
-    if CONFIG.USE_THUMBNAILS:
-        if CONFIG.THUMBNAIL_SEARCH_DIR.is_dir():
-            shutil.rmtree(CONFIG.THUMBNAIL_SEARCH_DIR)
-
-        CONFIG.THUMBNAIL_SEARCH_DIR.mkdir()
-        process = Process(
-            target=get_search_thumbnails,
-            args=(parser.result_list,),
-            kwargs={"circuit_manager": circuit_manager},
-        )
-        try:
-            process.start()
-            process.join()
-        except Exception as e:
-            logger.error(e)
-            process.kill()
-            raise e
-        if process.exitcode != 0:
-            raise ProcessError
-    return parser.result_list
-
-
-# use this function to get rss entries from channel id
-def get_rss_entries_from_channel_id(channel_id, circuit_manager=None):
-    rss_address = get_rss_address_from_channel_id(channel_id)
-    rss_content = get_http_content(rss_address, circuit_manager=circuit_manager).text
-    entries = feedparser.parse(rss_content)["entries"]
-    return entries
 
 
 # use this function to add a subscription to the database
@@ -409,7 +166,7 @@ def refresh_subscriptions_by_channel_id_process(
 
 
 def refresh_subscription_by_channel_id(feed: db.Feed, circuit_manager=None):
-    remote_feed = get_rss_entries_from_channel_id(
+    remote_feed = parser.get_rss_entries_from_channel_id(
         feed.channel_id, circuit_manager=circuit_manager
     )
     if remote_feed is not None:
@@ -425,33 +182,6 @@ def refresh_subscription_by_channel_id(feed: db.Feed, circuit_manager=None):
                     break
             else:
                 feed.entries.insert(0, filtered_entry)
-
-
-# use this function to open a YouTube video url in mpv
-def open_url_in_mpv(url, max_resolution=1080, circuit_manager=None):
-    command = [
-        "mpv",
-        f"--ytdl-format=bestvideo[height=?{max_resolution}]+bestaudio/best",
-        url,
-    ]
-
-    mpv_process = None
-    try:
-        # it is important to pipe outputs to NULL here otherwise output buffer will fill
-        # up
-        mpv_process = subprocess.Popen(
-            command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-        mpv_process.wait()
-        result = mpv_process.poll()
-    except KeyboardInterrupt:
-        logger.error("User interrupt detected, exiting MPV process")
-        if mpv_process is not None:
-            mpv_process.kill()
-            mpv_process.wait()
-        result = -1
-
-    return result == 0
 
 
 # use this function to get the data we care about from the entries found by the
@@ -491,14 +221,14 @@ def do_interactive_search_for_video(circuit_manager=None):
         try:
             result_list = tui.wait_screen(
                 "Getting video results...",
-                get_video_query_results,
+                parser.get_video_query_results,
                 query,
                 circuit_manager=circuit_manager,
             )
             if result_list:
                 menu_options = [
                     MethodMenuDecision(
-                        VideoQueryObjectDescriber(result),
+                        result,
                         play_video,
                         result.url,
                         circuit_manager=circuit_manager,
@@ -546,35 +276,9 @@ def get_thumbnails_for_feed(feed, auth=None):
             continue
         video_id = entry["id"].split(":")[-1]
         thumbnail_filename = CONFIG.THUMBNAIL_DIR / video_id + ".jpg"
-        thumbnail_content = get_http_content(entry["thumbnail"], auth=auth)
+        thumbnail_content = parser.get_http_content(entry["thumbnail"], auth=auth)
         entry["thumbnail file"] = thumbnail_filename
         thumbnail_filename.write_bytes(thumbnail_content.content)
-
-
-def get_search_thumbnails(result_list, circuit_manager=None):
-    if circuit_manager is not None:
-        auth = circuit_manager.getAuth()
-    else:
-        auth = None
-    threads = []
-    for result in result_list:
-        thread = utils.ErrorCatchingThread(
-            get_search_thumbnail_from_search_result,
-            result,
-            auth=auth,
-        )
-        threads.append(thread)
-        thread.start()
-    for thread in threads:
-        thread.join()
-
-
-def get_search_thumbnail_from_search_result(result, auth=None):
-    video_id = result.video_id.split(":")[-1]
-    thumbnail_filename: Path = CONFIG.THUMBNAIL_SEARCH_DIR / video_id + ".jpg"
-    thumbnail_content = get_http_content(result.thumbnail, auth=auth)
-    result.thumbnailFile = thumbnail_filename
-    thumbnail_filename.write_bytes(thumbnail_content.content)
 
 
 # this is the application level flow entered when the user has chosen to subscribe to a
@@ -586,7 +290,7 @@ def do_interactive_channel_subscribe(circuit_manager=None):
         try:
             result_list = tui.wait_screen(
                 "Getting channel results...",
-                get_channel_query_results,
+                parser.get_channel_query_results,
                 query,
                 circuit_manager=circuit_manager,
             )
@@ -622,7 +326,7 @@ def do_interactive_channel_subscribe(circuit_manager=None):
 
 # this is the application level flow entered when the user has chosen a channel that it
 # wants to subscribe to
-def do_channel_subscribe(result: ChannelQueryObject, circuit_manager):
+def do_channel_subscribe(result: parser.ChannelQueryObject, circuit_manager):
     database: db.IDatabase = tui.wait_screen("", CONFIG.get_database)
 
     if database.fetch(db.Feed, channel_id=result.channel_id):
@@ -722,6 +426,10 @@ def do_interactive_browse_subscriptions(circuit_manager):
     )
 
 
+def describe_feed_entry(feed_entry: db.FeedEntry) -> str:
+    return feed_entry.title + (" (unseen!)" if not feed_entry.seen else "")
+
+
 # this is the application level flow entered when the user has chosen a channel while
 # browsing its current subscriptions;
 # the user now gets to select a video from the channel to watch
@@ -734,7 +442,7 @@ def do_select_video_from_subscription(
 
     menu_options = [
         MethodMenuDecision(
-            FeedVideoDescriber(entry),
+            describe_feed_entry(entry),
             do_play_video_from_subscription,
             database,
             entry,
@@ -776,10 +484,9 @@ def play_video(video_url, circuit_manager=None):
     while not result:
         result = tui.wait_screen(
             "playing video...",
-            open_url_in_mpv,
+            output.open_url_in_mpv,
             video_url,
             max_resolution=max_resolution,
-            circuit_manager=circuit_manager,
         )
         if result or not tui.yes_no_query(
             "Something went wrong when playing the video. Try again?"
