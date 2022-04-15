@@ -12,6 +12,12 @@ def get_app_data_directory() -> Path:
         app_data_dir = os.environ.get("APPDATA")
     else:
         app_data_dir = os.environ.get("XDG_DATA_HOME")
+        if app_data_dir is None:
+            app_data_dir = os.path.join(
+                os.environ.get("HOME"),
+                ".local",
+                "share",
+            )
 
     if app_data_dir is None:
         raise OSError("Could not find app data directory")
