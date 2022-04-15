@@ -43,6 +43,7 @@ class Config:
         self.YOUTUBE_RSS_DIR.mkdir(parents=True, exist_ok=True)
         self.THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
         self.THUMBNAIL_SEARCH_DIR.mkdir(parents=True, exist_ok=True)
+        self._ui = None
 
     def get_database(self) -> db.IDatabase:
         database = db.JsonDatabase({}, self.DATABASE_PATH)
@@ -53,6 +54,13 @@ class Config:
             database.connect()
 
         return database
+
+    def get_ui(self):
+        from . import ui
+
+        if self._ui is None:
+            self._ui = ui.tui.TUI()
+        return self._ui
 
 
 CONFIG = Config()

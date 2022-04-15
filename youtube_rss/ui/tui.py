@@ -1,8 +1,9 @@
 import contextlib
 import curses
-import enum
+from typing import Callable
 
-from .config import CONFIG
+from ..config import CONFIG
+from .base import _T, BaseUI, QueryStyle, UnknownQueryStyle
 
 try:
     import ueberzug.lib.v0 as ueberzug
@@ -10,22 +11,45 @@ except ImportError:
     ueberzug = None
 
 
-class UnknownQueryStyle(Exception):
-    """Indicates that the provided query style is not supported."""
+class TUI(BaseUI):
+    def notify(self, message: str) -> None:
+        """Notify the user until they confirm having seen it."""
+        self.select_query(message, ["ok"], show_item_number=False)
 
+    def select_query(
+        self,
+        query: str,
+        options,
+        query_style=QueryStyle.ITEM_QUERY_STYLE,
+        initial_index=None,
+        show_item_number: bool = True,
+        adhoc_keys=None,
+    ):
+        return curses.wrapper(
+            _select_query_ncurses,
+            query,
+            options,
+            query_style=query_style,
+            initial_index=initial_index,
+            show_item_number=show_item_number,
+            adhoc_keys=adhoc_keys or [],
+        )
 
-RETURN_FROM_MENU = object()
+    def user_input(self, query: str, max_input_length: int = 40):
+        """Get a string of written input from the user."""
+        return curses.wrapper(
+            _user_input_ncurses, query, max_input_length=max_input_length
+        )
 
+    def wait_screen(
+        self, prompt: str, wait_function: Callable[..., _T], *args, **kwargs
+    ) -> _T:
+        return curses.wrapper(
+            _wait_screen_ncurses, prompt, wait_function, *args, **kwargs
+        )
 
-class QueryStyle(enum.Enum):
-    INDEX_QUERY_STYLE = 0
-    ITEM_QUERY_STYLE = 1
-    COMBINED_QUERY_STYLE = 2
-
-
-def wait_screen(message, wait_function, *args, **kwargs):
-    """Display a message while the user waits for a function to execute."""
-    return curses.wrapper(_wait_screen_ncurses, message, wait_function, *args, **kwargs)
+    def yes_no_query(self, prompt: str) -> bool:
+        return curses.wrapper(_yes_no_query_ncurses, prompt)
 
 
 def _wait_screen_ncurses(stdscr, message, wait_function, *args, **kwargs):
@@ -39,11 +63,6 @@ def _wait_screen_ncurses(stdscr, message, wait_function, *args, **kwargs):
     return wait_function(*args, **kwargs)
 
 
-def yes_no_query(query):
-    """Get a yes/no response to some query from the user."""
-    return curses.wrapper(_yes_no_query_ncurses, query)
-
-
 def _yes_no_query_ncurses(stdscr, query):
     """Ncurses level of do_yes_no_query, it should never be called directly,
     but always through do_yes_no_query.
@@ -51,26 +70,6 @@ def _yes_no_query_ncurses(stdscr, query):
     return (
         _select_query_ncurses(stdscr, query, ["yes", "no"], show_item_number=False)
         == "yes"
-    )
-
-
-def select_query(
-    query,
-    options,
-    query_style=QueryStyle.ITEM_QUERY_STYLE,
-    initial_index=None,
-    show_item_number=True,
-    adhoc_keys=None,
-):
-    """Display a list to the user to choose."""
-    return curses.wrapper(
-        _select_query_ncurses,
-        query,
-        options,
-        query_style=query_style,
-        initial_index=initial_index,
-        show_item_number=show_item_number,
-        adhoc_keys=adhoc_keys or [],
     )
 
 
@@ -154,16 +153,6 @@ def _select_query_ncurses(
                     return options[choice_index], choice_index
                 else:
                     raise UnknownQueryStyle(query_style)
-
-
-def notify(message):
-    """Notify the user until they confirm having seen it."""
-    select_query(message, ["ok"], show_item_number=False)
-
-
-def user_input(query, max_input_length=40):
-    """Get a string of written input from the user."""
-    return curses.wrapper(_user_input_ncurses, query, max_input_length=max_input_length)
 
 
 def _user_input_ncurses(stdscr, query, max_input_length=40):

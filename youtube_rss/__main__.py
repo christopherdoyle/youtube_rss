@@ -4,7 +4,7 @@ import os
 import signal
 import sys
 
-from . import tui, utils, youtube_rss
+from . import utils, youtube_rss
 from .config import CONFIG
 
 logger = logging.getLogger("youtube_rss")
@@ -26,7 +26,8 @@ def main():
     parsed_args = parser.parse_args()
     CONFIG.USE_THUMBNAILS = parsed_args.use_thumbnails
 
-    tui.wait_screen("", CONFIG.get_database)
+    ui = CONFIG.get_ui()
+    ui.wait_screen("", CONFIG.get_database)
     youtube_rss.do_main_menu()
     logger.info("Program end")
     os.kill(os.getpid(), signal.SIGTERM)

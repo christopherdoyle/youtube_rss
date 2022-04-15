@@ -157,7 +157,7 @@ def get_channel_query_results(query) -> List[ChannelQueryObject]:
     return p.result_list
 
 
-def get_video_query_results(query) -> List[VideoQueryObject]:
+def get_video_query_results(query: str) -> List[VideoQueryObject]:
     """Get a list of videos that match a query."""
     url = (
         "https://youtube.com/results?search_query="

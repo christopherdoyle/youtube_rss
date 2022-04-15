@@ -6,10 +6,12 @@ from typing import List
 
 import requests
 
-from . import db, output, parser, tui, utils
+from . import db, output, parser, ui, utils
 from .config import CONFIG
 
 logger = logging.getLogger("youtube_rss")
+
+RETURN_FROM_MENU = object()
 
 
 # item of the sort provided in list to do_method_menu; it is provided a
@@ -207,11 +209,11 @@ def do_mark_channel_as_read(database, channel_id):
 # this is the application level flow entered when the user has chosen to search for a
 # video
 def do_interactive_search_for_video():
-    query = tui.user_input("Search for video: ")
+    query = CONFIG.get_ui().user_input("Search for video: ")
     querying = True
     while querying:
         try:
-            result_list = tui.wait_screen(
+            result_list = CONFIG.get_ui().wait_screen(
                 "Getting video results...",
                 parser.get_video_query_results,
                 query,
@@ -226,16 +228,16 @@ def do_interactive_search_for_video():
                     for result in result_list
                 ]
                 menu_options.insert(
-                    0, MethodMenuDecision("[Go back]", do_return_from_menu)
+                    0, MethodMenuDecision("[Go back]", return_from_menu)
                 )
                 do_method_menu(f"Search results for '{query}':", menu_options)
                 querying = False
             else:
-                tui.notify("no results found")
+                CONFIG.get_ui().notify("no results found")
                 querying = False
         except ProcessError as e:
             logger.error(e)
-            if not tui.yes_no_query("Something went wrong. Try again?"):
+            if not CONFIG.get_ui().yes_no_query("Something went wrong. Try again?"):
                 querying = False
 
     if CONFIG.THUMBNAIL_SEARCH_DIR.is_dir():
@@ -268,11 +270,11 @@ def get_thumbnails_for_feed(feed):
 # this is the application level flow entered when the user has chosen to subscribe to a
 # new channel
 def do_interactive_channel_subscribe():
-    query = tui.user_input("Enter channel to search for: ")
+    query = CONFIG.get_ui().user_input("Enter channel to search for: ")
     querying = True
     while querying:
         try:
-            result_list = tui.wait_screen(
+            result_list = CONFIG.get_ui().wait_screen(
                 "Getting channel results...",
                 parser.get_channel_query_results,
                 query,
@@ -287,7 +289,7 @@ def do_interactive_channel_subscribe():
                     for result in result_list
                 ]
                 menu_options.insert(
-                    0, MethodMenuDecision("[Go back]", do_return_from_menu)
+                    0, MethodMenuDecision("[Go back]", return_from_menu)
                 )
                 do_method_menu(
                     f"search results for '{query}', choose which "
@@ -296,11 +298,11 @@ def do_interactive_channel_subscribe():
                 )
                 querying = False
             else:
-                if not tui.yes_no_query("No results found. Try again?"):
+                if not CONFIG.get_ui().yes_no_query("No results found. Try again?"):
                     querying = False
         except requests.exceptions.ConnectionError as e:
             logger.error(e)
-            if not tui.yes_no_query(
+            if not CONFIG.get_ui().yes_no_query(
                 "Something went wrong with the connection. Try again?"
             ):
                 querying = False
@@ -309,15 +311,15 @@ def do_interactive_channel_subscribe():
 # this is the application level flow entered when the user has chosen a channel that it
 # wants to subscribe to
 def do_channel_subscribe(result: parser.ChannelQueryObject):
-    database: db.IDatabase = tui.wait_screen("", CONFIG.get_database)
+    database: db.IDatabase = CONFIG.get_ui().wait_screen("", CONFIG.get_database)
 
     if database.fetch(db.Feed, channel_id=result.channel_id):
-        tui.notify("Already subscribed to this channel!")
+        CONFIG.get_ui().notify("Already subscribed to this channel!")
         return
 
     while True:
         try:
-            tui.wait_screen(
+            CONFIG.get_ui().wait_screen(
                 f"getting data from feed for {result.title}...",
                 add_subscription_to_database,
                 result.channel_id,
@@ -327,39 +329,39 @@ def do_channel_subscribe(result: parser.ChannelQueryObject):
             break
         except requests.exceptions.ConnectionError as e:
             logger.error(e)
-            if not tui.yes_no_query(
+            if not CONFIG.get_ui().yes_no_query(
                 "Something went wrong with the " + "connection. Try again?"
             ):
                 do_channel_unsubscribe(result.channel_id)
                 break
 
-    return tui.RETURN_FROM_MENU
+    return RETURN_FROM_MENU
 
 
 # this is the application level flow entered when the user has chosen to unsubscribe to
 # a channel
 def do_interactive_channel_unsubscribe():
-    database: db.IDatabase = tui.wait_screen("", CONFIG.get_database)
+    database: db.IDatabase = CONFIG.get_ui().wait_screen("", CONFIG.get_database)
     if not database.fetch_first(db.Feed):
-        tui.notify("You are not subscribed to any channels")
+        CONFIG.get_ui().notify("You are not subscribed to any channels")
         return
     menu_options = [
         MethodMenuDecision(feed.title, do_channel_unsubscribe, feed.channel_id)
         for feed in database.fetch_all(db.Feed)
     ]
-    menu_options.insert(0, MethodMenuDecision("[Go back]", do_return_from_menu))
+    menu_options.insert(0, MethodMenuDecision("[Go back]", return_from_menu))
     do_method_menu("Which channel do you want to unsubscribe from?", menu_options)
 
 
 # this is the application level flow entered when the user has chosen a channel that it
 # wants to unsubscribe from
 def do_channel_unsubscribe(channel_id):
-    database = tui.wait_screen("", CONFIG.get_database)
+    database = CONFIG.get_ui().wait_screen("", CONFIG.get_database)
     database.remove(db.Feed, channel_id=channel_id)
     if CONFIG.USE_THUMBNAILS:
         delete_thumbnails_by_channel_title(database, channel_id)
     database.save()
-    return tui.RETURN_FROM_MENU
+    return RETURN_FROM_MENU
 
 
 def describe_feed(feed: db.Feed) -> str:
@@ -378,7 +380,7 @@ def describe_feed(feed: db.Feed) -> str:
 # this is the application level flow entered when the user has chosen to browse
 # its current subscriptions
 def do_interactive_browse_subscriptions():
-    database: db.IDatabase = tui.wait_screen("", CONFIG.get_database)
+    database: db.IDatabase = CONFIG.get_ui().wait_screen("", CONFIG.get_database)
     menu_options = [
         MethodMenuDecision(
             describe_feed(feed),
@@ -395,10 +397,10 @@ def do_interactive_browse_subscriptions():
     ]
 
     if not menu_options:
-        tui.notify("You are not subscribed to any channels")
+        CONFIG.get_ui().notify("You are not subscribed to any channels")
         return
 
-    menu_options.insert(0, MethodMenuDecision("[Go back]", do_return_from_menu))
+    menu_options.insert(0, MethodMenuDecision("[Go back]", return_from_menu))
     do_method_menu(
         "Which channel do you want to watch a video from?",
         menu_options,
@@ -432,7 +434,7 @@ def do_select_video_from_subscription(database: db.IDatabase, channel_id):
         MarkEntryAsReadKey(video, i + 1) for i, video in enumerate(feed.entries)
     ]
     database.save()
-    menu_options.insert(0, MethodMenuDecision("[Go back]", do_return_from_menu))
+    menu_options.insert(0, MethodMenuDecision("[Go back]", return_from_menu))
     do_method_menu(
         "Which video do you want to watch?", menu_options, adhoc_keys=adhoc_keys
     )
@@ -452,18 +454,18 @@ def do_play_video_from_subscription(database: db.IDatabase, video: db.FeedEntry)
 # YouTube
 def play_video(video_url):
     resolution_menu_list = [1080, 720, 480, 240]
-    max_resolution = tui.select_query(
+    max_resolution = CONFIG.get_ui().select_query(
         "Which maximum resolution do you want to use?", resolution_menu_list
     )
     result = False
     while not result:
-        result = tui.wait_screen(
+        result = CONFIG.get_ui().wait_screen(
             "playing video...",
             output.open_url_in_mpv,
             video_url,
             max_resolution=max_resolution,
         )
-        if result or not tui.yes_no_query(
+        if result or not CONFIG.get_ui().yes_no_query(
             "Something went wrong when playing the video. Try again?"
         ):
             break
@@ -473,11 +475,11 @@ def play_video(video_url):
 # this is the application level flow entered when the user has chosen to refresh its
 # subscriptions
 def do_refresh_subscriptions():
-    database: db.IDatabase = tui.wait_screen("", CONFIG.get_database)
+    database: db.IDatabase = CONFIG.get_ui().wait_screen("", CONFIG.get_database)
     feeds = database.fetch_all(db.Feed)
     while True:
         try:
-            tui.wait_screen(
+            CONFIG.get_ui().wait_screen(
                 "refreshing subscriptions...",
                 refresh_subscriptions_by_channel_id,
                 feeds,
@@ -486,7 +488,7 @@ def do_refresh_subscriptions():
         except ProcessError as e:
             logger.error("Failed to refresh subscriptions")
             logger.error(e)
-            if not tui.yes_no_query("Something went wrong. Try again?"):
+            if not CONFIG.get_ui().yes_no_query("Something went wrong. Try again?"):
                 break
 
 
@@ -512,7 +514,7 @@ def do_main_menu():
             "Unsubscribe from channel",
             do_interactive_channel_unsubscribe,
         ),
-        MethodMenuDecision("Quit", do_return_from_menu),
+        MethodMenuDecision("Quit", return_from_menu),
     ]
     do_method_menu("What do you want to do?", menu_options)
 
@@ -524,11 +526,11 @@ def do_method_menu(query, menu_options, show_item_number=True, adhoc_keys=None):
     index = 0
     try:
         while True:
-            method_menu_decision, index = tui.select_query(
+            method_menu_decision, index = CONFIG.get_ui().select_query(
                 query,
                 menu_options,
                 initial_index=index,
-                query_style=tui.QueryStyle.COMBINED_QUERY_STYLE,
+                query_style=ui.QueryStyle.COMBINED_QUERY_STYLE,
                 show_item_number=show_item_number,
                 adhoc_keys=adhoc_keys or [],
             )
@@ -536,13 +538,11 @@ def do_method_menu(query, menu_options, show_item_number=True, adhoc_keys=None):
                 result = method_menu_decision.execute_decision()
             except KeyboardInterrupt:
                 result = None
-            if result is tui.RETURN_FROM_MENU:
+            if result is RETURN_FROM_MENU:
                 return
     except KeyboardInterrupt:
         return
 
 
-# this function is an application level flow which when selected from a method
-# menu simply returns to the preceding menu (one step closer to the root menu)
-def do_return_from_menu():
-    return tui.RETURN_FROM_MENU
+def return_from_menu():
+    return RETURN_FROM_MENU
