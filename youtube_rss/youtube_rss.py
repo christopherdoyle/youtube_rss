@@ -81,11 +81,16 @@ class VideoQueryParser(HTMLParser):
             self.is_script_tag = False
             if "var ytInitialData" in data:
                 pattern = re.compile(
-                    'video_id":"([^"]+)","thumbnail":{"thumbnails":'
-                    '[{"url":"([^"]+)","width":[0-9]+,"height":[0-9]+},{"url"'
-                    ':"[^"]+","width":[0-9]+,"height":[0-9]+}]},"title":{'
-                    '"runs":[{"text":"[^"]+"}],"accessibility":{'
-                    '"accessibilityData":{"label":"([^"]+)"}'
+                    r'videoId":"([^"]+)",'
+                    r'"thumbnail":'
+                    r'{"thumbnails":\['
+                    r'\{"url":"([^"]+)","width":[0-9]+,"height":[0-9]+\},'
+                    r'\{"url":"[^"]+","width":[0-9]+,"height":[0-9]+\}'
+                    r'\]\},'
+                    r'"title":\{'
+                    r'"runs":\[\{"text":"[^"]+"\}\],'
+                    r'"accessibility":\{"accessibilityData":\{"label":"([^"]+)"'
+                    r'\}'
                 )
                 tuple_list = pattern.findall(data)
                 result_list = []
@@ -294,9 +299,9 @@ def get_video_query_results(query, circuit_manager=None):
         + urllib.parse.quote(query)
         + "&sp=EgIQAQ%253D%253D"
     )
-    html_ceontent = get_http_content(url, circuit_manager=circuit_manager).text
+    html_content = get_http_content(url, circuit_manager=circuit_manager).text
     parser = VideoQueryParser()
-    parser.feed(html_ceontent)
+    parser.feed(html_content)
     if CONFIG.USE_THUMBNAILS:
         if CONFIG.THUMBNAIL_SEARCH_DIR.is_dir():
             shutil.rmtree(CONFIG.THUMBNAIL_SEARCH_DIR)
