@@ -2,9 +2,20 @@ import os
 from pathlib import Path
 
 
+def get_app_data_directory() -> Path:
+    if os.name == "nt":
+        app_data_dir = os.environ.get("APPDATA")
+    else:
+        app_data_dir = os.environ.get("XDG_DATA_HOME")
+
+    if app_data_dir is None:
+        raise OSError("Could not find app data directory")
+
+    return Path(app_data_dir)
+
+
 class Config:
-    HOME = Path(os.environ.get("HOME"))
-    YOUTUBE_RSS_DIR = HOME / ".youtube_rss"
+    YOUTUBE_RSS_DIR = get_app_data_directory() / "youtube_rss"
     THUMBNAIL_DIR = YOUTUBE_RSS_DIR / "thumbnails"
     THUMBNAIL_SEARCH_DIR = THUMBNAIL_DIR / "search"
     DATABASE_PATH = YOUTUBE_RSS_DIR / "database"
@@ -16,6 +27,11 @@ class Config:
     ANY_INDEX = -1
 
     USE_THUMBNAILS = False
+
+    def __init__(self) -> None:
+        self.YOUTUBE_RSS_DIR.mkdir(parents=True, exist_ok=True)
+        self.THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
+        self.THUMBNAIL_SEARCH_DIR.mkdir(parents=True, exist_ok=True)
 
 
 CONFIG = Config()

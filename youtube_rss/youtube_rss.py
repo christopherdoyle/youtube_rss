@@ -53,8 +53,11 @@ class ChannelQueryParser(HTMLParser):
             self.is_script_tag = False
             if "var ytInitialData" in data:
                 pattern = re.compile(
-                    '"channelRenderer":{"channel_id":"([^"]+)",'
-                    + '"title":{"simpleText":"([^"]+)"'
+                    # fmt: off
+                    r'"channelRenderer":\{'
+                    r'"channelId":"([^"]+)",'
+                    r'"title":\{"simpleText":"([^"]+)"'
+                    # fmt: on
                 )
                 tuple_list = pattern.findall(data)
                 result_list = []
@@ -80,6 +83,7 @@ class VideoQueryParser(HTMLParser):
         if self.is_script_tag:
             self.is_script_tag = False
             if "var ytInitialData" in data:
+                # fmt: off
                 pattern = re.compile(
                     r'videoId":"([^"]+)",'
                     r'"thumbnail":'
@@ -92,6 +96,7 @@ class VideoQueryParser(HTMLParser):
                     r'"accessibility":\{"accessibilityData":\{"label":"([^"]+)"'
                     r'\}'
                 )
+                # fmt: on
                 tuple_list = pattern.findall(data)
                 result_list = []
                 for tup in tuple_list:
@@ -285,9 +290,9 @@ def get_channel_query_results(query, circuit_manager=None):
         + urllib.parse.quote(query)
         + "&sp=EgIQAg%253D%253D"
     )
-    html_ceontent = get_http_content(url, circuit_manager=circuit_manager).text
+    html_content = get_http_content(url, circuit_manager=circuit_manager).text
     parser = ChannelQueryParser()
-    parser.feed(html_ceontent)
+    parser.feed(html_content)
     return parser.result_list
 
 
@@ -453,17 +458,18 @@ def refresh_subscription_by_channel_id(channel_id, local_feed, circuit_manager=N
 
 # use this function to open a YouTube video url in mpv
 def open_url_in_mpv(url, max_resolution=1080, circuit_manager=None):
-    command = []
-    command += [
+    command = [
         "mpv",
         f"--ytdl-format=bestvideo[height=?{max_resolution}]+bestaudio/best",
+        url,
     ]
-    command.append(url)
 
     mpv_process = None
     try:
+        # it is important to pipe outputs to NULL here otherwise output buffer will fill
+        # up
         mpv_process = subprocess.Popen(
-            command, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT
+            command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
         mpv_process.wait()
         result = mpv_process.poll()
@@ -786,7 +792,7 @@ def play_video(video_url, circuit_manager=None):
             circuit_manager=circuit_manager,
         )
         if result or not tui.yes_no_query(
-            "Something went wrong when playing the " + "video. Try again?"
+            "Something went wrong when playing the video. Try again?"
         ):
             break
     return result

@@ -8,6 +8,7 @@ authors = []
 python = "^3.9"
 feedparser = "^6.0.8"
 requests = "^2.27.1"
+windows-curses = "^2.3.0"
 
 [tool.poetry.dev-dependencies]
 pre-commit = "^2.18.1"

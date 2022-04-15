@@ -15,25 +15,38 @@ internal subscription system that requires a privacy violating Google account.
 
 ## Dependencies
 
-YouTube\_RSS is developed and tested on Ubuntu Linux. It will probably work just fine in
-similar Unix-like operating systems, but probably not on Windows (at least not without
-a little bit of pain).
-
 The following python modules are used and may need to be installed, e.g. using pip:
+
 ```
 feedparser
 urllib3
 pysocks
 ```
+
 If you want to get thumbnails for videos, you will additionally need to install the
 module `ueberzug`, e.g. using pip.
 
-The program also assumes that [mpv](https://github.com/mpv-player/mpv) is
-installed in the environment. In, for example, Ubuntu, this can be accomplished
-by running `sudo apt-get install mpv`. [youtube-dl](https://github.com/ytdl-org) also
-needs to be installed (I use the latest version on their [official website](https://youtube-dl.org/), and
-at the time of this writing, the version in the Ubuntu rebository seems too old to work
-the way this project uses it).
+### MPV & YouTube-DL
+
+MPV and YouTube-DL are used to stream the video, ao. 2022 YT-DLP is a superior
+choice to YouTube-DL, which may suffer buffering issues. MPV will automatically
+use YT-DLP if it is installed, otherwise falling back to YT-DL.
+
+#### Ubuntu
+
+```commandline
+sudo apt-get install mpv
+```
+
+[Install yt-dlp](https://github.com/yt-dlp/yt-dlp#installation=)
+
+#### Windows
+
+```commandline
+choco install mpv
+choco install yt-dlp
+```
+
 
 ## Usage
 

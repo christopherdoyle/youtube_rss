@@ -1,7 +1,7 @@
 import logging
 import os
+import shutil
 import signal
-import subprocess
 import threading
 from typing import Optional
 
@@ -46,5 +46,4 @@ class ErrorCatchingThread(threading.Thread):
 
 
 def is_mpv_installed() -> bool:
-    proc = subprocess.run(["which", "mpv"])
-    return proc.returncode == 0
+    return shutil.which("mpv") is not None

@@ -34,9 +34,6 @@ def main():
         if not flag.treated:
             raise command_line_parser.CommandLineParseError
 
-    CONFIG.YOUTUBE_RSS_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG.THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
-
     if not CONFIG.DATABASE_PATH.is_file():
         logger.info("Initializing new database")
         database = db.initialize_database()
