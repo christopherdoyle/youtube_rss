@@ -1,9 +1,10 @@
+import argparse
 import logging
 import os
 import signal
 import sys
 
-from . import command_line_parser, tui, utils, youtube_rss
+from . import tui, utils, youtube_rss
 from .config import CONFIG
 
 logger = logging.getLogger("youtube_rss")
@@ -20,19 +21,10 @@ def main():
         logger.error("MPV not found")
         sys.exit(1)
 
-    flags = command_line_parser.read_flags(sys.argv)
-    for flag in flags:
-        if flag not in command_line_parser.allowed_flags:
-            raise command_line_parser.CommandLineParseError
-
-    if "use-thumbnails" in flags:
-        flag = flags[flags.index("use-thumbnails")]
-        flag.treated = True
-        CONFIG.USE_THUMBNAILS = True
-
-    for flag in flags:
-        if not flag.treated:
-            raise command_line_parser.CommandLineParseError
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--use_thumbnails", action="store_true", default=False)
+    parsed_args = parser.parse_args()
+    CONFIG.USE_THUMBNAILS = parsed_args.use_thumbnails
 
     tui.wait_screen("", CONFIG.get_database)
     youtube_rss.do_main_menu()
