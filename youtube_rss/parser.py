@@ -129,7 +129,7 @@ class ChannelQueryObject:
         return f"{self.title}  --  (channel ID {self.channel_id})"
 
 
-def get_http_content(url, auth=None, method="GET", post_payload=None):
+def get_http_content(url, method="GET", post_payload=None):
     session = requests.Session()
     session.headers["Accept-Language"] = "en-US"
     # This cookie lets us avoid the YouTube consent page
@@ -144,7 +144,7 @@ def get_rss_address_from_channel_id(channel_id: str) -> str:
     return f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
 
 
-def get_channel_query_results(query, circuit_manager=None) -> List[ChannelQueryObject]:
+def get_channel_query_results(query) -> List[ChannelQueryObject]:
     """Get a list of channels that match a query."""
     url = (
         "https://youtube.com/results?search_query="
@@ -157,7 +157,7 @@ def get_channel_query_results(query, circuit_manager=None) -> List[ChannelQueryO
     return p.result_list
 
 
-def get_video_query_results(query, circuit_manager=None) -> List[VideoQueryObject]:
+def get_video_query_results(query) -> List[VideoQueryObject]:
     """Get a list of videos that match a query."""
     url = (
         "https://youtube.com/results?search_query="
@@ -175,7 +175,6 @@ def get_video_query_results(query, circuit_manager=None) -> List[VideoQueryObjec
         process = Process(
             target=get_search_thumbnails,
             args=(p.result_list,),
-            kwargs={"circuit_manager": circuit_manager},
         )
         try:
             process.start()
@@ -189,32 +188,27 @@ def get_video_query_results(query, circuit_manager=None) -> List[VideoQueryObjec
     return p.result_list
 
 
-def get_rss_entries_from_channel_id(channel_id, circuit_manager=None):
+def get_rss_entries_from_channel_id(channel_id):
     rss_address = get_rss_address_from_channel_id(channel_id)
     rss_content = get_http_content(rss_address).text
     entries = feedparser.parse(rss_content)["entries"]
     return entries
 
 
-def get_search_thumbnail_from_search_result(result, auth=None):
+def get_search_thumbnail_from_search_result(result):
     video_id = result.video_id.split(":")[-1]
     thumbnail_filename: Path = CONFIG.THUMBNAIL_SEARCH_DIR / video_id + ".jpg"
-    thumbnail_content = get_http_content(result.thumbnail, auth=auth)
+    thumbnail_content = get_http_content(result.thumbnail)
     result.thumbnailFile = thumbnail_filename
     thumbnail_filename.write_bytes(thumbnail_content.content)
 
 
-def get_search_thumbnails(result_list, circuit_manager=None):
-    if circuit_manager is not None:
-        auth = circuit_manager.getAuth()
-    else:
-        auth = None
+def get_search_thumbnails(result_list):
     threads = []
     for result in result_list:
         thread = utils.ErrorCatchingThread(
             get_search_thumbnail_from_search_result,
             result,
-            auth=auth,
         )
         threads.append(thread)
         thread.start()
